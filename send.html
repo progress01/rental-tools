@@ -96,6 +96,7 @@
 
 <div class="wrap">
   <div id="syncbar"></div>
+  <div id="pendbar"></div>
   <div class="tabs" id="tabs">
     <button class="on" data-tab="list">名單</button>
     <button data-tab="log">工作日誌</button>
@@ -272,8 +273,8 @@ const DB = {
 /* ============ 預設：動作、簡訊範本 ============ */
 // 動作：結果選項、寫回主表哪一欄、寫成什麼字（{日期}{結果}{備註}{，備註}）
 const DEFAULT_ACTIONS = [
-  { id: 'deliver', name: '送信', icon: '✉', type: 'generic', results: ['貼門上', '投信箱', '交本人', '交家人／管理室'], fails: ['無人在家', '拒收'], col: ['貼單通知'], fmt: '{日期}貼單通知{（備註）}', writeFails: false, quick: ['上個月份通知', '這個月份通知'] },
-  { id: 'sms', name: '簡訊', icon: '💬', type: 'sms', results: ['已傳送'], fails: ['沒傳出去'], col: ['簡訊提醒', '簡訊/LINE催款', '簡訊/LINE'], fmt: '{日期}簡訊通知', writeFails: false },
+  { id: 'deliver', name: '通知', icon: '✉', type: 'generic', results: ['貼門上', '投信箱', '交本人', '交家人／管理室'], fails: ['無人在家', '拒收'], col: ['貼單通知'], fmt: '{日期}貼單通知{（備註）}', writeFails: true, quick: ['上個月份通知', '這個月份通知'] },
+  { id: 'sms', name: '簡訊', icon: '💬', type: 'sms', results: ['已傳送'], fails: ['沒傳出去'], col: ['簡訊提醒', '簡訊/LINE催款', '簡訊/LINE'], fmt: '{日期}簡訊通知', writeFails: true },
   { id: 'call', name: '電話', icon: '📞', type: 'call', results: ['通知'], fails: ['未接', '空號'], col: ['電話聯繫', '電話催款', '電話通知'], fmt: '{日期}電話{結果}{，備註}', writeFails: true, quick: ['說會去繳', '說已經繳了', '請家人轉告', '晚點再打'] },
   { id: 'reply', name: '對方回覆', icon: '🗨', type: 'generic', results: ['收到', '知曉了', '說會繳', '已繳款'], fails: [], col: ['備註', '催款備註'], fmt: '{日期}回：{結果}{，備註}', writeFails: true },
   { id: 'visit', name: '拜訪', icon: '🚪', type: 'generic', results: ['見到本人', '家人代收'], fails: ['無人在家'], col: ['備註', '催款備註'], fmt: '{日期}拜訪{結果}{，備註}', writeFails: true },
@@ -428,7 +429,8 @@ async function loadFile(file) {
   if (!R) return alert('看不出這是催收表或送信紀錄。\n催收表要有「物件地址」「承租人」「連絡電話」這幾欄。');
   const n = Object.keys(R.roster).length, owe = Object.values(R.roster).filter(o => o.amount > 0).length;
   if (Object.keys(S.roster).length && !confirm(`換成這份新名單？\n${R.title || file.name}：共 ${n} 戶，其中 ${owe} 戶有欠款。\n\n之前的紀錄會保留在工作日誌裡。`)) return;
-  S.roster = R.roster; S.rosterAt = Date.now(); S.title = R.title || file.name.replace(/\.\w+$/, ''); S.cols = R.cols; S.srcName = file.name; applyTags();
+  const title = R.title || file.name.replace(/\.\w+$/, '');
+  S.roster = R.roster; if (!(title === S.title && S.rosterAt)) S.rosterAt = Date.now(); S.title = title; S.cols = R.cols; S.srcName = file.name; applyTags();
   // 原檔留在這台，之後「下載主表」時把紀錄寫回原本的欄位
   try { await DB.set('kv', 'src', { name: file.name, buf: await file.arrayBuffer(), at: S.rosterAt }); } catch (e) {}
   save(); filter = 'todo'; render();
@@ -569,7 +571,7 @@ function render() {
   list.querySelectorAll('[data-del]').forEach(x => x.onclick = () => delEvent(x.dataset.del));
   list.querySelectorAll('[data-tagk]').forEach(x => x.onclick = () => tagSheet(S.roster[x.dataset.tagk]));
   list.querySelectorAll('[data-ph]').forEach(x => x.onclick = ev => { ev.preventDefault(); showPhoto(x.dataset.ph); });
-  renderLog();
+  renderLog(); pendBar();
 }
 function badge(e) {
   const a = A(e.kind), cls = isFail(e) ? 'fail' : a.type === 'sms' ? 'sms' : a.type === 'call' ? 'call' : e.kind === S.primary ? 'deliver' : '';
@@ -628,7 +630,15 @@ function delEvent(id) {
 
 /* ============ 底部視窗 ============ */
 function openSheet(html) { $('sheetBox').innerHTML = html; $('sheet').classList.remove('hidden'); }
-function closeSheet() { $('sheet').classList.add('hidden'); }
+function closeSheet() { $('sheet').classList.add('hidden'); pendBar(); }
+// 撥了電話／按了傳簡訊，但還沒記結果：上面一直提醒
+function pendBar() {
+  const el = $('pendbar'); if (!el) return;
+  const o = pending && S.roster[pending.keys[0]];
+  if (!o || !pending.asked) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="syncbar">${pending.kind === 'call' ? '📞 剛剛的電話' : '💬 剛剛的簡訊'}還沒記結果：<b>${who(o)}</b><span class="grow"></span><button class="small primary" id="pbGo">記結果</button><button class="small" id="pbNo">不用記</button></div>`;
+  $('pbGo').onclick = askPending; $('pbNo').onclick = () => { pending = null; saveUI(); pendBar(); };
+}
 $('sheet').addEventListener('click', e => { if (e.target === $('sheet')) closeSheet(); });
 async function showPhoto(id) {
   const src = await DB.get('photos', id);
@@ -782,7 +792,7 @@ function callStart(o) {
   $('cLater').onclick = () => { pending = { kind: 'call', keys: [o.key], items, at: Date.now() }; askPending(); };
 }
 function askPending() {
-  if (!pending) return; const p = pending; pending = null; saveUI();
+  if (!pending) return; const p = pending; p.asked = true; saveUI();
   const o = S.roster[p.keys[0]]; if (!o) return;
   const a = A(p.kind), isCall = a.type === 'call';
   let how = '';
@@ -792,10 +802,12 @@ function askPending() {
       <textarea id="cNote" rows="2" placeholder="對方說了什麼（可不填）。鍵盤上的🎤可以用講的"></textarea>
       <div class="row" style="margin-top:8px"><span class="hint">哪一天：</span><input type="date" id="cDate" value="${todayISO()}" style="width:auto;padding:6px 10px"></div>
       <div class="hint" id="cPrev" style="margin-top:6px"></div>` : ''}
-    <div class="row" style="margin-top:10px"><span class="grow"></span><button onclick="closeSheet()">不用記</button>${isCall ? '<button class="primary" id="cSave" disabled>儲存</button>' : ''}</div>`);
+    <div class="row" style="margin-top:10px"><span class="grow"></span><button id="cSkip">不用記</button>${isCall ? '<button class="primary" id="cSave" disabled>儲存</button>' : ''}</div>`);
+  $('cSkip').onclick = () => { pending = null; saveUI(); closeSheet(); };
   const tsOf = () => { const d = $('cDate') && $('cDate').value; if (!d || d === todayISO()) return Date.now(); const [y, m, dd] = d.split('-').map(Number), n = new Date(); return new Date(y, m - 1, dd, n.getHours(), n.getMinutes()).getTime(); };
   const save1 = () => {
     const note = $('cNote') ? $('cNote').value.trim() : (p.note || ''), ts = tsOf();
+    pending = null;
     p.keys.forEach(k => addEvent(k, p.kind, how, note, false, { ts, mt: Date.now(), items: (p.items && p.items[k]) || [] }));
     closeSheet(); toast(`已記錄：${a.name} ${how}${isCall && note ? '，' + note : ''}`);
   };
@@ -813,21 +825,26 @@ function askPending() {
 }
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') return saveUI();
-  if (pending && Date.now() - pending.at > 800) setTimeout(askPending, 300);
+  if (pending && !pending.asked && Date.now() - pending.at > 800) setTimeout(askPending, 300);
 });
 window.addEventListener('pagehide', saveUI);
 let scrollT = 0; window.addEventListener('scroll', () => { clearTimeout(scrollT); scrollT = setTimeout(saveUI, 250); }, { passive: true });
 
 /* ============ 寫回主表 ============ */
 // 一筆紀錄要寫回哪一欄、寫什麼字
-function colOf(a) { const cols = S.cols || []; return (a.col || []).find(c => cols.includes(c)) || null; }
+// 每個動作都寫進主表：先找這個動作對應的欄位，找不到就寫進備註類的欄位
+const NOTE_COLS = ['催款備註', '備註', '註記'];
+function colOf(a) {
+  const cols = S.cols || [], d = DEFAULT_ACTIONS.find(x => x.id === a.id);
+  return [...(d ? d.col : []), ...(a.col || []), ...NOTE_COLS].find(c => cols.includes(c)) || null;
+}
 function noteLine(e) {
   const a = A(e.kind), col = colOf(a);
   if (!col || !a.fmt) return null;
-  if (A(e.kind).fails.includes(e.how) && !a.writeFails) return null;
   const note = str(e.note);
   const text = a.fmt.replace(/\{日期\}/g, fmtMD(new Date(e.ts))).replace(/\{結果\}/g, e.how || '').replace(/\{，備註\}/g, note ? '，' + note : '').replace(/\{（備註）\}/g, note ? '（' + note + '）' : '').replace(/\{備註\}/g, note).replace(/\{動作\}/g, a.name).trim().replace(/^(\d{1,2}\/\d{1,2})(?=\d{1,2}\/\d{1,2})/, ''); // 備註自己寫了日期就不要重複
-  return text ? { col, text } : null;
+  const failNote = a.fails.includes(e.how) && !/\{結果\}/.test(a.fmt) ? `（${e.how}）` : '';
+  return text ? { col, text: text + failNote } : null;
 }
 // 用原本那份 Excel：紀錄寫回原欄位，再藏兩個隱藏分頁放紀錄和設定（外觀跟原檔一模一樣）
 async function buildMaster() {
@@ -1029,8 +1046,8 @@ function tmplEditSheet(t) {
 
 /* ============ 設定：動作與寫回主表的欄位 ============ */
 function actListSheet() {
-  openSheet(`<h3>⚙ 動作設定</h3><div class="smsprev" style="font-size:14px">每一筆紀錄都會留在 App 和「工作日誌」裡。<br>另外，按「📥 下載主表」時，會自動把紀錄寫進主表的某一欄（例如「電話催款」欄寫上 <b>10/29電話未接</b>）。<br>下面每個動作都寫著它會寫進哪一欄；寫「只記在 App」的，就是不會寫進主表。點一下可以修改。</div>
-    <div style="display:flex;flex-direction:column;gap:8px;margin:10px 0">${S.actions.map(a => { const c = colOf(a); return `<button data-e="${a.id}" style="justify-content:space-between;text-align:left"><span><b>${esc(a.icon)} ${esc(a.name)}</b>${a.id === S.primary ? '　<span class="badge deliver">主要</span>' : ''}<br><span class="hint">${c ? `📄 主表「${esc(c)}」欄寫：${esc(noteLine({ kind: a.id, how: a.results[0] || a.fails[0] || '', note: a.type === 'note' ? '已繳9月租金' : '', ts: Date.now() })?.text || '')}` : (a.col || []).length && !(S.cols || []).length ? `📄 主表「${esc(a.col[0])}」欄（放入主表後才知道有沒有這欄）` : '只記在 App，不寫進主表'}</span></span><span>✎</span></button>`; }).join('')}</div>
+  openSheet(`<h3>⚙ 動作設定</h3><div class="smsprev" style="font-size:14px">所有紀錄都會寫進主表，不用設定。<br>傳到另一台或按「📥 下載主表」時，會自動寫進對應的欄位，例如「電話催款」欄寫上 <b>10/29電話未接</b>。<br>這裡只用來改按鈕上的選項和常用的話。</div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin:10px 0">${S.actions.map(a => { const c = colOf(a); return `<button data-e="${a.id}" style="justify-content:space-between;text-align:left"><span><b>${esc(a.icon)} ${esc(a.name)}</b>${a.id === S.primary ? '　<span class="badge deliver">主要</span>' : ''}<br><span class="hint">${c ? `📄 寫進「${esc(c)}」：${esc(noteLine({ kind: a.id, how: a.results[0] || a.fails[0] || '', note: a.type === 'note' ? '已繳9月租金' : '', ts: Date.now() })?.text || '')}` : '📄 放入主表後會自動找欄位'}</span></span><span>✎</span></button>`; }).join('')}</div>
     <div class="row"><button id="aAdd">＋ 新增動作</button><button class="small" id="aReset">還原預設</button><span class="grow"></span><button onclick="closeSheet()">關閉</button></div>`);
   $('sheetBox').querySelectorAll('[data-e]').forEach(b => b.onclick = () => actEditSheet(A(b.dataset.e)));
   $('aAdd').onclick = () => actEditSheet(null);
@@ -1046,20 +1063,15 @@ function actEditSheet(a) {
     <textarea id="aOpts" rows="5">${esc([...a.results, ...a.fails.map(x => '✗' + x)].join('\n'))}</textarea>`}
     ${a.type === 'note' ? '' : `<div class="hint" style="margin-top:10px">常用補充說明（一行一個，登記時點一下帶入；「上個月份」「這個月份」會自動換成月份）</div>
     <textarea id="aQuick" rows="2">${esc((a.quick || []).join('\n'))}</textarea>`}
-    <div class="hint" style="margin-top:10px">下載主表時，寫進哪一欄</div>
-    <select id="aCol"><option value="">不寫進主表（只記在 App 和工作日誌）</option>${[...new Set([...cols, ...(cur && !cols.includes(cur) ? [cur] : [])])].map(c => `<option ${c === cur ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
-    <div class="hint" style="margin-top:10px">在那一欄寫成什麼字（{日期}＝10/29、{結果}＝選的選項、{備註}＝補充說明；{，備註}、{（備註）}＝有補充說明時才加上）</div>
-    <input type="text" id="aFmt" value="${esc(a.fmt)}">
-    ${a.type === 'note' ? '' : `<label class="row" style="margin-top:8px"><input type="checkbox" id="aWF" ${a.writeFails ? 'checked' : ''}> 「沒成功」的也寫進主表（例如 10/5電話未接）；不勾就只記在 App</label>`}
     ${itemTypes().length ? `<div class="hint" style="margin-top:10px">適用哪些項目（都不選＝全部項目都能用）</div><div class="chips" id="aItems">${itemTypes().map(x => `<button class="chip ${(a.items || []).includes(x) ? 'on' : ''}" data-ai="${esc(x)}">${esc(x)}</button>`).join('')}</div>` : ''}
     <label class="row" style="margin-top:6px"><input type="checkbox" id="aPri" ${a.id === S.primary ? 'checked' : ''} ${a.type !== 'generic' ? 'disabled' : ''}> 設為主要動作（卡片上的大按鈕，用來算「已處理／還沒處理」）</label>
     <div class="smsprev" id="aPrev"></div>
     <div class="row">${isNew || ['sms', 'call', 'note'].includes(a.type) ? '' : '<button class="danger small" id="aDel">刪除這個動作</button>'}<span class="grow"></span><button id="aBack">返回</button><button class="primary" id="aSave">儲存</button></div>`);
   const read = () => {
     const lines = $('aOpts') ? $('aOpts').value.split('\n').map(s => s.trim()).filter(Boolean) : [];
-    return { name: $('aName').value.trim(), icon: $('aIcon').value.trim() || '📌', results: lines.filter(s => !/^[✗xX]/.test(s)), fails: lines.filter(s => /^[✗xX]/.test(s)).map(s => s.replace(/^[✗xX]\s*/, '')), col: $('aCol').value ? [$('aCol').value] : [], fmt: $('aFmt').value, writeFails: $('aWF') ? $('aWF').checked : true, quick: $('aQuick') ? $('aQuick').value.split('\n').map(s => s.trim()).filter(Boolean) : [], items: $('aItems') ? [...$('aItems').querySelectorAll('.on')].map(b => b.dataset.ai) : (a.items || []) };
+    return { name: $('aName').value.trim(), icon: $('aIcon').value.trim() || '📌', results: lines.filter(s => !/^[✗xX]/.test(s)), fails: lines.filter(s => /^[✗xX]/.test(s)).map(s => s.replace(/^[✗xX]\s*/, '')), col: a.col || [], fmt: a.fmt, writeFails: true, quick: $('aQuick') ? $('aQuick').value.split('\n').map(s => s.trim()).filter(Boolean) : [], items: $('aItems') ? [...$('aItems').querySelectorAll('.on')].map(b => b.dataset.ai) : (a.items || []) };
   };
-  const prev = () => { const r = read(), keep = S.actions; const tmp = Object.assign({}, a, r); S.actions = [...S.actions.filter(x => x.id !== a.id), tmp]; const w = noteLine({ kind: a.id, how: r.results[0] || r.fails[0] || '', note: '補充說明', ts: Date.now() }); S.actions = keep; $('aPrev').textContent = w ? `例：主表「${w.col}」欄會寫 → ${w.text}` : '這個動作只記在 App，不會寫進主表'; };
+  const prev = () => { const r = read(), keep = S.actions; const tmp = Object.assign({}, a, r); S.actions = [...S.actions.filter(x => x.id !== a.id), tmp]; const w = noteLine({ kind: a.id, how: r.results[0] || r.fails[0] || '', note: '補充說明', ts: Date.now() }); S.actions = keep; $('aPrev').textContent = w ? `例：主表「${w.col}」會寫 → ${w.text}` : '放入主表後會自動找欄位'; };
   $('sheetBox').querySelectorAll('input,textarea,select').forEach(el => el.addEventListener('input', prev)); prev();
   if ($('aItems')) $('aItems').querySelectorAll('[data-ai]').forEach(c => c.onclick = () => c.classList.toggle('on'));
   $('aBack').onclick = actListSheet;
@@ -1077,7 +1089,7 @@ function actEditSheet(a) {
 $('bMenu').onclick = () => openSheet(`<h3>設定</h3>
   <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
     <button id="mTmpl">💬 簡訊範本</button>
-    <button id="mAct">⚙ 動作設定（選項、寫進主表哪一欄）</button>
+    <button id="mAct">⚙ 按鈕選項設定</button>
     <button id="mCustom">🏷 自己維護的項目（例如延遲金）</button>
     <button id="mCols">🧩 卡片要顯示哪些欄位</button>
     <button id="mMaster" ${S.srcName ? '' : 'disabled'}>📥 下載主表（紀錄寫回原本的欄位）</button>
@@ -1119,6 +1131,8 @@ function bindMenu() {
       if (s.tmpl && !s.templates) S.templates = clone(DEFAULT_TEMPLATES); // 舊版只有一個範本
       for (const d of DEFAULT_ACTIONS) if (!S.actions.find(a => a.id === d.id) && ['reply', 'visit'].includes(d.id) && !s.actions) S.actions.push(clone(d));
     }
+    const dv = S.actions.find(a => a.id === 'deliver'); if (dv && dv.name === '送信') dv.name = '通知';
+    S.actions.forEach(a => { a.writeFails = true; const d = DEFAULT_ACTIONS.find(x => x.id === a.id); if (d) { a.col = clone(d.col); a.fmt = d.fmt; } });
     // 舊的電話寫法補上備註
     const c = S.actions.find(a => a.id === 'call');
     if (c && c.fmt === '{日期}電話{結果}') { c.fmt = '{日期}電話{結果}{，備註}'; if (!c.quick || !c.quick.length) c.quick = clone(DEFAULT_ACTIONS.find(a => a.id === 'call').quick); }
@@ -1132,7 +1146,7 @@ function bindMenu() {
   }
   applyTags(); render();
   if (ui && ui.y) requestAnimationFrame(() => window.scrollTo(0, ui.y));
-  if (pending) setTimeout(askPending, 400);
+  if (pending) setTimeout(() => pending.asked ? pendBar() : askPending(), 400);
 })();
 </script>
 <script>if (location.protocol.startsWith("http") && "serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});</script>
