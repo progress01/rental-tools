@@ -635,9 +635,11 @@ function closeSheet() { $('sheet').classList.add('hidden'); pendBar(); }
 function pendBar() {
   const el = $('pendbar'); if (!el) return;
   const o = pending && S.roster[pending.keys[0]];
-  if (!o || !pending.asked) { el.innerHTML = ''; return; }
-  el.innerHTML = `<div class="syncbar">${pending.kind === 'call' ? '📞 剛剛的電話' : '💬 剛剛的簡訊'}還沒記結果：<b>${who(o)}</b><span class="grow"></span><button class="small primary" id="pbGo">記結果</button><button class="small" id="pbNo">不用記</button></div>`;
-  $('pbGo').onclick = askPending; $('pbNo').onclick = () => { pending = null; saveUI(); pendBar(); };
+  if (!o) { el.innerHTML = ''; return; }
+  const again = pending.kind === 'call' ? (pending.num ? `tel:${pending.num}` : '') : pending.url || '';
+  el.innerHTML = `<div class="syncbar">${pending.kind === 'call' ? '📞 剛剛的電話' : '💬 剛剛的簡訊'}還沒記結果：<b>${who(o)}</b><span class="grow"></span>${again ? `<button class="small" id="pbAgain">${pending.kind === 'call' ? '再撥一次' : '再開一次簡訊'}</button>` : ''}<button class="small primary" id="pbGo">記結果</button><button class="small" id="pbNo">不用記</button></div>`;
+  $('pbGo').onclick = askPending;
+  if ($('pbAgain')) $('pbAgain').onclick = () => { pending.at = Date.now(); pending.asked = false; saveUI(); location.href = again; }; $('pbNo').onclick = () => { pending = null; saveUI(); pendBar(); };
 }
 $('sheet').addEventListener('click', e => { if (e.target === $('sheet')) closeSheet(); });
 async function showPhoto(id) {
@@ -772,9 +774,11 @@ function smsSheet(o) {
   });
   if ($('smW')) $('smW').querySelectorAll('[data-w]').forEach(b => b.onclick = () => { st.with.has(b.dataset.w) ? st.with.delete(b.dataset.w) : st.with.add(b.dataset.w); if (!st.custom) st.owed = owedOf(units(), picked()); regen(); });
   pickI.bind(); regen();
-  $('smsGo').onclick = () => {
-    $('smsGo').href = `sms:${mob}${IS_IOS ? '&' : '?'}body=${encodeURIComponent($('smBody').value.trim())}`;
-    pending = { kind: 'sms', keys: units().map(u => u.key), items: picked(), at: Date.now(), note: st.tmpl.name }; saveUI(); closeSheet();
+  $('smsGo').onclick = ev => {
+    ev.preventDefault();
+    const url = `sms:${mob}${IS_IOS ? '&' : '?'}body=${encodeURIComponent($('smBody').value.trim())}`;
+    pending = { kind: 'sms', keys: units().map(u => u.key), items: picked(), at: Date.now(), note: st.tmpl.name, url }; saveUI(); closeSheet();
+    location.href = url; // 和打電話一樣：先記住畫面和「等著問結果」，再跳去簡訊 App
     if (!IS_PHONE) setTimeout(askPending, 600);
   };
 }
