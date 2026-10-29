@@ -274,7 +274,7 @@ const DB = {
 const DEFAULT_ACTIONS = [
   { id: 'deliver', name: '送信', icon: '✉', type: 'generic', results: ['貼門上', '投信箱', '交本人', '交家人／管理室'], fails: ['無人在家', '拒收'], col: ['貼單通知'], fmt: '{日期}貼單通知{（備註）}', writeFails: false, quick: ['上個月份通知', '這個月份通知'] },
   { id: 'sms', name: '簡訊', icon: '💬', type: 'sms', results: ['已傳送'], fails: ['沒傳出去'], col: ['簡訊提醒', '簡訊/LINE催款', '簡訊/LINE'], fmt: '{日期}簡訊通知', writeFails: false },
-  { id: 'call', name: '電話', icon: '📞', type: 'call', results: ['通知'], fails: ['未接', '空號'], col: ['電話聯繫', '電話催款', '電話通知'], fmt: '{日期}電話{結果}', writeFails: true },
+  { id: 'call', name: '電話', icon: '📞', type: 'call', results: ['通知'], fails: ['未接', '空號'], col: ['電話聯繫', '電話催款', '電話通知'], fmt: '{日期}電話{結果}{，備註}', writeFails: true, quick: ['說會去繳', '說已經繳了', '請家人轉告', '晚點再打'] },
   { id: 'reply', name: '對方回覆', icon: '🗨', type: 'generic', results: ['收到', '知曉了', '說會繳', '已繳款'], fails: [], col: ['備註', '催款備註'], fmt: '{日期}回：{結果}{，備註}', writeFails: true },
   { id: 'visit', name: '拜訪', icon: '🚪', type: 'generic', results: ['見到本人', '家人代收'], fails: ['無人在家'], col: ['備註', '催款備註'], fmt: '{日期}拜訪{結果}{，備註}', writeFails: true },
   { id: 'note', name: '備註', icon: '📝', type: 'note', results: [], fails: [], col: ['備註', '催款備註'], fmt: '{日期}{備註}', writeFails: true }
@@ -294,6 +294,21 @@ let S = blankState();
 const DEFAULT_SHOW = ['承租人', '連絡電話', '合計', '逾期天數'];
 let filter = 'todo', query = '';
 const justDone = new Set();
+// 畫面狀態（篩選、搜尋、捲動位置、等著問結果的電話／簡訊）：跳去撥電話、傳簡訊時，手機可能把這頁關掉重開，回來要還原
+const UI_KEY = 'songxin-ui';
+let pending = null;
+function saveUI() {
+  const tab = document.querySelector('#tabs button.on');
+  const v = JSON.stringify({ at: Date.now(), filter, query, itemFilter, justDone: [...justDone], y: window.scrollY, tab: tab ? tab.dataset.tab : 'list', pending });
+  try { sessionStorage.setItem(UI_KEY, v); } catch (e) {}
+  try { localStorage.setItem(UI_KEY, v); } catch (e) {}
+}
+function loadUI() {
+  let v = null;
+  try { v = JSON.parse(sessionStorage.getItem(UI_KEY) || 'null'); } catch (e) {}
+  if (!v) try { v = JSON.parse(localStorage.getItem(UI_KEY) || 'null'); if (v && Date.now() - v.at > 6 * 3600e3) v = null; } catch (e) { v = null; }
+  return v;
+}
 let saveT = null;
 function save() { clearTimeout(saveT); saveT = setTimeout(() => DB.set('kv', 'state', S).catch(() => toast('⚠ 存檔失敗')), 200); }
 const touchCfg = () => { S.cfgAt = Date.now(); save(); };
@@ -316,7 +331,7 @@ const inRoundFor = (e, l) => (l && S.customItems.includes(itemType(l))) || inRou
 const unsynced = () => S.events.filter(e => (e.mt || e.ts) > S.lastExport).length;
 function addEvent(key, kind, how, note, hasPhoto, extra) {
   const e = Object.assign({ id: uid(), key, kind, how: how || '', note: note || '', ts: Date.now(), mt: Date.now(), device: DEVICE, hasPhoto: !!hasPhoto }, extra || {});
-  S.events.push(e); justDone.add(key); save(); render(); return e;
+  S.events.push(e); justDone.add(key); save(); render(); saveUI(); return e;
 }
 
 /* ============ 讀檔：催收表 或 另一台傳來的紀錄 ============ */
@@ -527,6 +542,7 @@ function render() {
   const P = primaryA();
   $('monthLbl').textContent = S.title ? `名單：${S.title}` : '';
   const chips = document.querySelectorAll('#chips .chip');
+  chips.forEach(x => x.classList.toggle('on', x.dataset.f === filter));
   chips[0].textContent = `還沒${P.name}`; chips[1].textContent = `已${P.name}`;
   const n = unsynced();
   $('syncbar').innerHTML = !all.length ? '' : n
@@ -545,7 +561,7 @@ function render() {
   const types = itemTypes();
   if (itemFilter && !types.includes(itemFilter)) itemFilter = '';
   $('itemChips').innerHTML = types.length > 1 ? ['', ...types].map(x => `<button class="chip ${x === itemFilter ? 'on' : ''}" data-ty="${esc(x)}">${x ? esc(x) : '全部項目'}</button>`).join('') : '';
-  $('itemChips').querySelectorAll('[data-ty]').forEach(c => c.onclick = () => { itemFilter = c.dataset.ty; render(); });
+  $('itemChips').querySelectorAll('[data-ty]').forEach(c => c.onclick = () => { itemFilter = c.dataset.ty; render(); saveUI(); });
   const byItem = o => !itemFilter || (o.items || []).some(l => itemType(l) === itemFilter);
   const shown = all.filter(byItem).filter(o => filter === 'all' ? true : owes(o) && (filter === 'done' ? delivered(o.key) : (!delivered(o.key) || justDone.has(o.key)))).filter(match);
   list.innerHTML = shown.length ? shown.map(cardHTML).join('') : `<div class="empty" style="grid-column:1/-1">${qs.length ? '找不到符合的' : filter === 'todo' ? '🎉 都處理完了' : '沒有資料'}</div>`;
@@ -588,11 +604,12 @@ function cardHTML(o) {
     ${evs.length ? `<details><summary class="more">紀錄 ${evs.length} 筆</summary><div class="hist">${evs.map(e => `<div>${fmtTime(e.ts)}　${esc(A(e.kind).name)}${(e.items || []).length && its.length > 1 ? `（${esc(e.items.join('、'))}）` : ''}${e.how ? '：' + esc(e.how) : ''}${e.note ? '　' + esc(e.note) : ''}${e.hasPhoto ? ` <a href="#" data-ph="${e.id}">📷</a>` : ''}<span class="x" data-del="${e.id}" title="刪除這筆">✕</span></div>`).join('')}</div></details>` : ''}
   </div>`;
 }
-document.querySelectorAll('#chips .chip').forEach(c => c.onclick = () => { filter = c.dataset.f; justDone.clear(); document.querySelectorAll('#chips .chip').forEach(x => x.classList.toggle('on', x === c)); render(); });
-$('q').oninput = () => { query = $('q').value; render(); };
+document.querySelectorAll('#chips .chip').forEach(c => c.onclick = () => { filter = c.dataset.f; justDone.clear(); render(); saveUI(); });
+$('q').oninput = () => { query = $('q').value; render(); saveUI(); };
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
   document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b));
   $('viewList').classList.toggle('hidden', b.dataset.tab !== 'list'); $('viewLog').classList.toggle('hidden', b.dataset.tab !== 'log');
+  saveUI();
 });
 function renderLog() {
   const evs = liveEvents().sort((a, b) => b.ts - a.ts);
@@ -701,7 +718,6 @@ function fillTmpl(text, o, units, opt) {
     .replace(/\{戶數\}/g, `${NUM[us.length] || us.length}戶`).replace(/\{欠繳\}/g, opt.owed).replace(/\{欠款\}/g, money(us.reduce((s, u) => s + (u.amount || 0), 0)))
     .replace(/\{日期\}/g, fmtMD(new Date()));
 }
-let pending = null;
 function smsSheet(o) {
   const mob = mobileOf(o.phones.join(' '));
   const siblings = Object.values(S.roster).filter(x => x.key !== o.key && owes(x) && mobileOf(x.phones.join(' ')) === mob);
@@ -748,31 +764,59 @@ function smsSheet(o) {
   pickI.bind(); regen();
   $('smsGo').onclick = () => {
     $('smsGo').href = `sms:${mob}${IS_IOS ? '&' : '?'}body=${encodeURIComponent($('smBody').value.trim())}`;
-    pending = { kind: 'sms', keys: units().map(u => u.key), items: picked(), at: Date.now(), note: st.tmpl.name }; closeSheet();
+    pending = { kind: 'sms', keys: units().map(u => u.key), items: picked(), at: Date.now(), note: st.tmpl.name }; saveUI(); closeSheet();
     if (!IS_PHONE) setTimeout(askPending, 600);
   };
 }
+// 📞：先選要撥哪一支（或已經打過了，直接記結果）
 function callStart(o) {
-  const mob = mobileOf(o.phones.join(' ')) || str(o.phones[0]).replace(/[^\d#*+]/g, '');
-  pending = { kind: 'call', keys: [o.key], items: { [o.key]: defaultItems(o).filter(l => applicable(A('call'), l)) }, at: Date.now() };
-  location.href = `tel:${mob}`;
-  if (!IS_PHONE) setTimeout(askPending, 600);
+  const nums = [...new Set(o.phones.flatMap(p => str(p).split(/[,，、\/\s]+/)).map(p => p.replace(/[^\d#*+]/g, '')).filter(p => p.length >= 6))];
+  const items = { [o.key]: defaultItems(o).filter(l => applicable(A('call'), l)) };
+  const dial = n => { pending = { kind: 'call', keys: [o.key], items, at: Date.now(), num: n }; saveUI(); closeSheet(); location.href = `tel:${n}`; if (!IS_PHONE) setTimeout(askPending, 600); };
+  openSheet(`<h3>📞 打電話</h3><div class="hint">${who(o)}</div>
+    <div class="opts" style="grid-template-columns:1fr">${nums.map(n => `<button class="primary" data-n="${esc(n)}">📞 撥 ${esc(n)}</button>`).join('')}
+    <button id="cLater">📝 已經打過了，直接記結果</button></div>
+    <div class="hint">撥完回到這裡，會問你電話結果，也可以打字註記對方說了什麼。</div>
+    <div class="row" style="margin-top:8px"><span class="grow"></span><button onclick="closeSheet()">取消</button></div>`);
+  $('sheetBox').querySelectorAll('[data-n]').forEach(b => b.onclick = () => dial(b.dataset.n));
+  $('cLater').onclick = () => { pending = { kind: 'call', keys: [o.key], items, at: Date.now() }; askPending(); };
 }
 function askPending() {
-  if (!pending) return; const p = pending; pending = null;
+  if (!pending) return; const p = pending; pending = null; saveUI();
   const o = S.roster[p.keys[0]]; if (!o) return;
-  const a = A(p.kind);
-  openSheet(`<h3>${a.type === 'sms' ? '簡訊有傳出去嗎？' : '電話結果？'}</h3><div class="hint">${who(o)}${p.keys.length > 1 ? `（共 ${p.keys.length} 戶）` : ''}</div>
+  const a = A(p.kind), isCall = a.type === 'call';
+  let how = '';
+  openSheet(`<h3>${isCall ? '📞 電話結果' : '💬 簡訊有傳出去嗎？'}</h3><div class="hint">${who(o)}${p.num ? '｜' + esc(p.num) : ''}${p.keys.length > 1 ? `（共 ${p.keys.length} 戶）` : ''}</div>
     <div class="opts">${[...a.results, ...a.fails].map(x => `<button data-how="${esc(x)}">${esc(x)}</button>`).join('')}</div>
-    ${a.type === 'call' ? '<textarea id="cNote" rows="2" placeholder="對方說了什麼（可不填）"></textarea>' : ''}
-    <div class="row" style="margin-top:8px"><span class="grow"></span><button onclick="closeSheet()">不用記</button></div>`);
+    ${isCall ? `${quickHTML(a).replace('這封是哪一份通知？（點一下帶入，也可以自己打）', '對方說了什麼？（點一下帶入，也可以自己打）')}
+      <textarea id="cNote" rows="2" placeholder="對方說了什麼（可不填）。鍵盤上的🎤可以用講的"></textarea>
+      <div class="row" style="margin-top:8px"><span class="hint">哪一天：</span><input type="date" id="cDate" value="${todayISO()}" style="width:auto;padding:6px 10px"></div>
+      <div class="hint" id="cPrev" style="margin-top:6px"></div>` : ''}
+    <div class="row" style="margin-top:10px"><span class="grow"></span><button onclick="closeSheet()">不用記</button>${isCall ? '<button class="primary" id="cSave" disabled>儲存</button>' : ''}</div>`);
+  const tsOf = () => { const d = $('cDate') && $('cDate').value; if (!d || d === todayISO()) return Date.now(); const [y, m, dd] = d.split('-').map(Number), n = new Date(); return new Date(y, m - 1, dd, n.getHours(), n.getMinutes()).getTime(); };
+  const save1 = () => {
+    const note = $('cNote') ? $('cNote').value.trim() : (p.note || ''), ts = tsOf();
+    p.keys.forEach(k => addEvent(k, p.kind, how, note, false, { ts, mt: Date.now(), items: (p.items && p.items[k]) || [] }));
+    closeSheet(); toast(`已記錄：${a.name} ${how}${isCall && note ? '，' + note : ''}`);
+  };
+  const prev = () => { if (!$('cPrev')) return; const w = noteLine({ kind: p.kind, how, note: $('cNote').value.trim(), ts: tsOf() }); $('cPrev').textContent = how ? (w ? `會寫回主表「${w.col}」：${w.text}` : '') : '先選一個結果'; };
   $('sheetBox').querySelectorAll('[data-how]').forEach(b => b.onclick = () => {
-    const note = $('cNote') ? $('cNote').value.trim() : (p.note || '');
-    p.keys.forEach(k => addEvent(k, p.kind, b.dataset.how, note, false, { items: (p.items && p.items[k]) || [] }));
-    closeSheet(); toast(`已記錄：${a.name} ${b.dataset.how}`);
+    how = b.dataset.how;
+    if (!isCall) return save1();
+    $('sheetBox').querySelectorAll('[data-how]').forEach(x => x.classList.toggle('sel', x === b)); $('cSave').disabled = false; prev();
   });
+  if (isCall) {
+    $('cNote').oninput = prev; $('cDate').onchange = prev; $('cSave').onclick = save1;
+    $('sheetBox').querySelectorAll('[data-q]').forEach(b => b.onclick = () => { $('cNote').value = b.dataset.q; prev(); });
+    prev();
+  }
 }
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && pending && Date.now() - pending.at > 800) setTimeout(askPending, 300); });
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') return saveUI();
+  if (pending && Date.now() - pending.at > 800) setTimeout(askPending, 300);
+});
+window.addEventListener('pagehide', saveUI);
+let scrollT = 0; window.addEventListener('scroll', () => { clearTimeout(scrollT); scrollT = setTimeout(saveUI, 250); }, { passive: true });
 
 /* ============ 寫回主表 ============ */
 // 一筆紀錄要寫回哪一欄、寫什麼字
@@ -985,8 +1029,8 @@ function tmplEditSheet(t) {
 
 /* ============ 設定：動作與寫回主表的欄位 ============ */
 function actListSheet() {
-  openSheet(`<h3>⚙ 動作與寫回主表</h3><p class="hint">每個動作的選項、要寫回主表哪一欄、寫成什麼字，都可以自己改。</p>
-    <div style="display:flex;flex-direction:column;gap:8px;margin:10px 0">${S.actions.map(a => { const c = colOf(a); return `<button data-e="${a.id}" style="justify-content:space-between;text-align:left"><span><b>${esc(a.icon)} ${esc(a.name)}</b>${a.id === S.primary ? '　<span class="badge deliver">主要</span>' : ''}<br><span class="hint">${c ? `寫回「${esc(c)}」：${esc(noteLine({ kind: a.id, how: a.results[0] || a.fails[0] || '', note: a.type === 'note' ? '已繳9月租金' : '', ts: Date.now() })?.text || '')}` : '不寫回主表'}</span></span><span>✎</span></button>`; }).join('')}</div>
+  openSheet(`<h3>⚙ 動作設定</h3><div class="smsprev" style="font-size:14px">每一筆紀錄都會留在 App 和「工作日誌」裡。<br>另外，按「📥 下載主表」時，會自動把紀錄寫進主表的某一欄（例如「電話催款」欄寫上 <b>10/29電話未接</b>）。<br>下面每個動作都寫著它會寫進哪一欄；寫「只記在 App」的，就是不會寫進主表。點一下可以修改。</div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin:10px 0">${S.actions.map(a => { const c = colOf(a); return `<button data-e="${a.id}" style="justify-content:space-between;text-align:left"><span><b>${esc(a.icon)} ${esc(a.name)}</b>${a.id === S.primary ? '　<span class="badge deliver">主要</span>' : ''}<br><span class="hint">${c ? `📄 主表「${esc(c)}」欄寫：${esc(noteLine({ kind: a.id, how: a.results[0] || a.fails[0] || '', note: a.type === 'note' ? '已繳9月租金' : '', ts: Date.now() })?.text || '')}` : (a.col || []).length && !(S.cols || []).length ? `📄 主表「${esc(a.col[0])}」欄（放入主表後才知道有沒有這欄）` : '只記在 App，不寫進主表'}</span></span><span>✎</span></button>`; }).join('')}</div>
     <div class="row"><button id="aAdd">＋ 新增動作</button><button class="small" id="aReset">還原預設</button><span class="grow"></span><button onclick="closeSheet()">關閉</button></div>`);
   $('sheetBox').querySelectorAll('[data-e]').forEach(b => b.onclick = () => actEditSheet(A(b.dataset.e)));
   $('aAdd').onclick = () => actEditSheet(null);
@@ -1002,11 +1046,11 @@ function actEditSheet(a) {
     <textarea id="aOpts" rows="5">${esc([...a.results, ...a.fails.map(x => '✗' + x)].join('\n'))}</textarea>`}
     ${a.type === 'note' ? '' : `<div class="hint" style="margin-top:10px">常用補充說明（一行一個，登記時點一下帶入；「上個月份」「這個月份」會自動換成月份）</div>
     <textarea id="aQuick" rows="2">${esc((a.quick || []).join('\n'))}</textarea>`}
-    <div class="hint" style="margin-top:10px">寫回主表哪一欄</div>
-    <select id="aCol"><option value="">不寫回主表</option>${[...new Set([...cols, ...(cur && !cols.includes(cur) ? [cur] : [])])].map(c => `<option ${c === cur ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
-    <div class="hint" style="margin-top:10px">寫成什麼字（{日期}＝10/29、{結果}＝選的選項、{備註}＝補充說明；{，備註}、{（備註）}＝有補充說明時才加上）</div>
+    <div class="hint" style="margin-top:10px">下載主表時，寫進哪一欄</div>
+    <select id="aCol"><option value="">不寫進主表（只記在 App 和工作日誌）</option>${[...new Set([...cols, ...(cur && !cols.includes(cur) ? [cur] : [])])].map(c => `<option ${c === cur ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
+    <div class="hint" style="margin-top:10px">在那一欄寫成什麼字（{日期}＝10/29、{結果}＝選的選項、{備註}＝補充說明；{，備註}、{（備註）}＝有補充說明時才加上）</div>
     <input type="text" id="aFmt" value="${esc(a.fmt)}">
-    ${a.type === 'note' ? '' : `<label class="row" style="margin-top:8px"><input type="checkbox" id="aWF" ${a.writeFails ? 'checked' : ''}> 「沒成功」的也寫回主表（例如 10/5電話未接）</label>`}
+    ${a.type === 'note' ? '' : `<label class="row" style="margin-top:8px"><input type="checkbox" id="aWF" ${a.writeFails ? 'checked' : ''}> 「沒成功」的也寫進主表（例如 10/5電話未接）；不勾就只記在 App</label>`}
     ${itemTypes().length ? `<div class="hint" style="margin-top:10px">適用哪些項目（都不選＝全部項目都能用）</div><div class="chips" id="aItems">${itemTypes().map(x => `<button class="chip ${(a.items || []).includes(x) ? 'on' : ''}" data-ai="${esc(x)}">${esc(x)}</button>`).join('')}</div>` : ''}
     <label class="row" style="margin-top:6px"><input type="checkbox" id="aPri" ${a.id === S.primary ? 'checked' : ''} ${a.type !== 'generic' ? 'disabled' : ''}> 設為主要動作（卡片上的大按鈕，用來算「已處理／還沒處理」）</label>
     <div class="smsprev" id="aPrev"></div>
@@ -1015,7 +1059,7 @@ function actEditSheet(a) {
     const lines = $('aOpts') ? $('aOpts').value.split('\n').map(s => s.trim()).filter(Boolean) : [];
     return { name: $('aName').value.trim(), icon: $('aIcon').value.trim() || '📌', results: lines.filter(s => !/^[✗xX]/.test(s)), fails: lines.filter(s => /^[✗xX]/.test(s)).map(s => s.replace(/^[✗xX]\s*/, '')), col: $('aCol').value ? [$('aCol').value] : [], fmt: $('aFmt').value, writeFails: $('aWF') ? $('aWF').checked : true, quick: $('aQuick') ? $('aQuick').value.split('\n').map(s => s.trim()).filter(Boolean) : [], items: $('aItems') ? [...$('aItems').querySelectorAll('.on')].map(b => b.dataset.ai) : (a.items || []) };
   };
-  const prev = () => { const r = read(), keep = S.actions; const tmp = Object.assign({}, a, r); S.actions = [...S.actions.filter(x => x.id !== a.id), tmp]; const w = noteLine({ kind: a.id, how: r.results[0] || r.fails[0] || '', note: '補充說明', ts: Date.now() }); S.actions = keep; $('aPrev').textContent = w ? `例：寫回「${w.col}」→ ${w.text}` : '例：不寫回主表'; };
+  const prev = () => { const r = read(), keep = S.actions; const tmp = Object.assign({}, a, r); S.actions = [...S.actions.filter(x => x.id !== a.id), tmp]; const w = noteLine({ kind: a.id, how: r.results[0] || r.fails[0] || '', note: '補充說明', ts: Date.now() }); S.actions = keep; $('aPrev').textContent = w ? `例：主表「${w.col}」欄會寫 → ${w.text}` : '這個動作只記在 App，不會寫進主表'; };
   $('sheetBox').querySelectorAll('input,textarea,select').forEach(el => el.addEventListener('input', prev)); prev();
   if ($('aItems')) $('aItems').querySelectorAll('[data-ai]').forEach(c => c.onclick = () => c.classList.toggle('on'));
   $('aBack').onclick = actListSheet;
@@ -1033,7 +1077,7 @@ function actEditSheet(a) {
 $('bMenu').onclick = () => openSheet(`<h3>設定</h3>
   <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
     <button id="mTmpl">💬 簡訊範本</button>
-    <button id="mAct">⚙ 動作與寫回主表的欄位</button>
+    <button id="mAct">⚙ 動作設定（選項、寫進主表哪一欄）</button>
     <button id="mCustom">🏷 自己維護的項目（例如延遲金）</button>
     <button id="mCols">🧩 卡片要顯示哪些欄位</button>
     <button id="mMaster" ${S.srcName ? '' : 'disabled'}>📥 下載主表（紀錄寫回原本的欄位）</button>
@@ -1075,8 +1119,20 @@ function bindMenu() {
       if (s.tmpl && !s.templates) S.templates = clone(DEFAULT_TEMPLATES); // 舊版只有一個範本
       for (const d of DEFAULT_ACTIONS) if (!S.actions.find(a => a.id === d.id) && ['reply', 'visit'].includes(d.id) && !s.actions) S.actions.push(clone(d));
     }
+    // 舊的電話寫法補上備註
+    const c = S.actions.find(a => a.id === 'call');
+    if (c && c.fmt === '{日期}電話{結果}') { c.fmt = '{日期}電話{結果}{，備註}'; if (!c.quick || !c.quick.length) c.quick = clone(DEFAULT_ACTIONS.find(a => a.id === 'call').quick); }
   } catch (e) {}
+  const ui = loadUI();
+  if (ui) {
+    filter = ui.filter || 'todo'; query = ui.query || ''; itemFilter = ui.itemFilter || '';
+    (ui.justDone || []).forEach(k => justDone.add(k)); $('q').value = query;
+    if (ui.tab === 'log') document.querySelector('#tabs [data-tab="log"]').click();
+    if (ui.pending && Date.now() - ui.pending.at < 3 * 3600e3) pending = ui.pending;
+  }
   applyTags(); render();
+  if (ui && ui.y) requestAnimationFrame(() => window.scrollTo(0, ui.y));
+  if (pending) setTimeout(askPending, 400);
 })();
 </script>
 <script>if (location.protocol.startsWith("http") && "serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});</script>
