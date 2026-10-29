@@ -104,8 +104,8 @@
     </div>
     <div class="tools">
       <div class="chips" id="chips">
-        <button class="chip on" data-f="todo">還沒送</button>
-        <button class="chip" data-f="done">已送</button>
+        <button class="chip on" data-f="todo">還沒處理</button>
+        <button class="chip" data-f="done">已處理</button>
         <button class="chip" data-f="all">全部</button>
       </div>
       <span class="grow"></span>
@@ -114,7 +114,7 @@
     <div class="list" id="list"></div>
   </div>
   <div id="viewLog" class="hidden">
-    <div class="tools"><span class="stat" id="logStat"></span><span class="grow"></span><button id="bLogXlsx">⬇ 下載工作日誌 Excel</button></div>
+    <div class="tools"><span class="stat" id="logStat"></span><span class="grow"></span><button id="bMaster" class="primary">📥 下載主表（紀錄寫回原本欄位）</button><button id="bLogXlsx">⬇ 下載工作日誌</button></div>
     <div style="overflow-x:auto"><table class="log" id="logTable"></table></div>
   </div>
 </div>
@@ -161,14 +161,7 @@ function mobileOf(phone) { // 取出第一支手機號碼（09 開頭 10 碼）
   return m ? m[0].replace(/\s/g, '') : '';
 }
 
-/* ============ 動作種類 ============ */
-const KIND = {
-  deliver: { name: '送信', opts: ['投信箱', '貼門上', '交本人', '交家人／管理室'], fail: ['無人在家（沒送出）', '拒收'] },
-  sms: { name: '簡訊', opts: ['已傳送'], fail: ['沒傳出去'] },
-  call: { name: '電話', opts: ['有接，已告知', '有接，說會繳'], fail: ['未接', '空號／停話'] },
-  note: { name: '備註', opts: [], fail: [] }
-};
-const isFail = e => (KIND[e.kind] && KIND[e.kind].fail.includes(e.how));
+
 
 const BUILTIN_DATE = new Set([14,15,16,17,18,19,20,21,22,27,28,29,30,31,32,33,34,35,36,45,46,47,50,51,52,53,54,55,56,57,58]);
 function isDateFormat(code) {
@@ -271,23 +264,44 @@ const DB = {
   async clear(st) { if (!this.db) { this.mem[st].clear(); return; } return this.tx(st, 'readwrite', s => s.clear()); }
 };
 
+/* ============ 預設：動作、簡訊範本 ============ */
+// 動作：結果選項、寫回主表哪一欄、寫成什麼字（{日期}{結果}{備註}{，備註}）
+const DEFAULT_ACTIONS = [
+  { id: 'deliver', name: '送信', icon: '✉', type: 'generic', results: ['貼門上', '投信箱', '交本人', '交家人／管理室'], fails: ['無人在家', '拒收'], col: ['貼單通知'], fmt: '{日期}貼單通知{（備註）}', writeFails: false, quick: ['上個月份通知', '這個月份通知'] },
+  { id: 'sms', name: '簡訊', icon: '💬', type: 'sms', results: ['已傳送'], fails: ['沒傳出去'], col: ['簡訊提醒', '簡訊/LINE催款', '簡訊/LINE'], fmt: '{日期}簡訊通知', writeFails: false },
+  { id: 'call', name: '電話', icon: '📞', type: 'call', results: ['通知'], fails: ['未接', '空號'], col: ['電話聯繫', '電話催款', '電話通知'], fmt: '{日期}電話{結果}', writeFails: true },
+  { id: 'reply', name: '對方回覆', icon: '🗨', type: 'generic', results: ['收到', '知曉了', '說會繳', '已繳款'], fails: [], col: ['備註', '催款備註'], fmt: '{日期}回：{結果}{，備註}', writeFails: true },
+  { id: 'visit', name: '拜訪', icon: '🚪', type: 'generic', results: ['見到本人', '家人代收'], fails: ['無人在家'], col: ['備註', '催款備註'], fmt: '{日期}拜訪{結果}{，備註}', writeFails: true },
+  { id: 'note', name: '備註', icon: '📝', type: 'note', results: [], fails: [], col: ['備註', '催款備註'], fmt: '{日期}{備註}', writeFails: true }
+];
+const TAIL = '若您已繳納，請勿理會此簡訊！\n敬祝\n順心愉快✨🌷\n感謝您！🙏✨';
+const DEFAULT_TEMPLATES = [
+  { id: 't1', name: '捷運局催繳', text: `{稱呼}，您好！\n捷運局提醒您，您在{社區}_承租{門牌}；房屋{戶數}，尚有{欠繳}未繳納，請記得撥空繳納。為避免產生額外違約金，提醒您，請儘速完成繳納。${TAIL}` },
+  { id: 't2', name: '轉達社區通知（管理費）', text: '{稱呼}您好，轉達社區通知：\n您承租的{門牌}，尚有管理費未繳付，再麻煩您盡速繳納，如已繳納則無須理會本通知，造成不便敬請見諒。' },
+  { id: 't3', name: '車位', text: `{稱呼}：您好！\n捷運局提醒您，您在{社區}_承租{門牌}車位乙個，尚有管理費未繳納，請記得撥空繳納。${TAIL}` }
+];
+const TOKENS = ['{稱呼}', '{社區}', '{門牌}', '{地址}', '{戶數}', '{欠繳}', '{承租人}', '{欠款}', '{日期}'];
+
 /* ============ 狀態 ============ */
-const DEFAULT_TMPL = '您好，{地址} 的租金目前尚有 {欠款} 元未繳納，敬請儘速繳納。如已繳納，請忽略此訊息，謝謝。';
-let S = { title: '', rosterAt: 0, roster: {}, events: [], tmpl: DEFAULT_TMPL, lastExport: 0, cols: [], show: null };
+const clone = x => JSON.parse(JSON.stringify(x));
+const blankState = () => ({ title: '', rosterAt: 0, roster: {}, events: [], lastExport: 0, cols: [], show: null, actions: clone(DEFAULT_ACTIONS), primary: 'deliver', templates: clone(DEFAULT_TEMPLATES), lastTmpl: 't1', sal: {}, cfgAt: 0, srcName: '' });
+let S = blankState();
 const DEFAULT_SHOW = ['承租人', '連絡電話', '合計', '逾期天數'];
 let filter = 'todo', query = '';
 const justDone = new Set();
 let saveT = null;
 function save() { clearTimeout(saveT); saveT = setTimeout(() => DB.set('kv', 'state', S).catch(() => toast('⚠ 存檔失敗')), 200); }
+const touchCfg = () => { S.cfgAt = Date.now(); save(); };
 const DEVICE = IS_PHONE ? '手機' : '電腦';
+const A = id => S.actions.find(a => a.id === id) || { id, name: id, icon: '•', type: 'generic', results: [], fails: [], col: [], fmt: '{日期}{結果}' };
+const primaryA = () => A(S.primary);
+const isFail = e => A(e.kind).fails.includes(e.how);
 const liveEvents = () => S.events.filter(e => !e.deleted);
 const evOf = key => liveEvents().filter(e => e.key === key).sort((a, b) => b.ts - a.ts);
-// 這一輪（放入這份名單之後）是否已經成功送信
-function delivered(key) { return evOf(key).find(e => e.kind === 'deliver' && !isFail(e) && e.ts >= S.rosterAt); }
+function delivered(key) { return evOf(key).find(e => e.kind === S.primary && !isFail(e) && e.ts >= S.rosterAt); }
 const unsynced = () => S.events.filter(e => (e.mt || e.ts) > S.lastExport).length;
-
-function addEvent(key, kind, how, note, hasPhoto) {
-  const e = { id: uid(), key, kind, how: how || '', note: note || '', ts: Date.now(), mt: Date.now(), device: DEVICE, hasPhoto: !!hasPhoto };
+function addEvent(key, kind, how, note, hasPhoto, extra) {
+  const e = Object.assign({ id: uid(), key, kind, how: how || '', note: note || '', ts: Date.now(), mt: Date.now(), device: DEVICE, hasPhoto: !!hasPhoto }, extra || {});
   S.events.push(e); justDone.add(key); save(); render(); return e;
 }
 
@@ -297,8 +311,7 @@ function parseRoster(sheets) {
   if (!h) return null;
   const { sheet, headerRow, map } = h;
   let title = '';
-  for (let r = 0; r < headerRow; r++) for (const v of (sheet.rows[r] || [])) if (!title && /月份/.test(str(v))) title = str(v).split(/\s|\u3000/)[0];
-  if (!title) { const t = str((sheet.rows[0] || [])[0]); if (/月份/.test(t)) title = t.split(/\s|　/)[0]; }
+  for (let r = 0; r < headerRow; r++) for (const v of (sheet.rows[r] || [])) if (!title && /月份/.test(str(v))) title = str(v).split(/\s|　/)[0];
   const roster = {};
   const cols = Object.keys(map).filter(h => h !== '物件地址').sort((a, b) => map[a] - map[b]);
   let lastKey = null;
@@ -324,7 +337,7 @@ function parseRoster(sheets) {
     const tot = g('合計'); if (isNum(tot)) o.amount = Math.max(o.amount, tot);
     if (!isNum(tot) && isNum(g('小計'))) o.amount += g('小計');
     if (isNum(g('逾期天數'))) o.overdue = g('逾期天數');
-    if (!o.base && str(g('基地'))) o.base = str(g('基地'));
+    if (!o.base && (str(g('基地')) || str(g('社區')))) o.base = str(g('社區')) || str(g('基地'));
     lastKey = key;
   }
   return { title, roster, cols };
@@ -344,15 +357,17 @@ function parseTransfer(sheets) {
     const amt = pick('_欠款', '欠款合計', '合計');
     roster[key] = { key, addr, tenant: str(pick('_承租人', '承租人')), phones: str(pick('_電話', '連絡電話')).split('\n').map(s => s.trim()).filter(Boolean), amount: isNum(amt) ? amt : 0, overdue: isNum(pick('_逾期', '逾期天數')) ? pick('_逾期', '逾期天數') : null, base: str(pick('_基地', '基地')), extra };
   }
+  const C = {}; if (cfg) for (const row of cfg.rows) if (row && str(row[0])) C[str(row[0])] = row[1];
+  let conf = null; try { conf = C['設定JSON'] ? JSON.parse(String(C['設定JSON'])) : null; } catch (e) {}
+  const acts = (conf && conf.actions) || S.actions;
   const E = hdr(log.rows), events = [];
   for (const row of log.rows.slice(1)) {
     if (!row) continue; const g = n => E[n] == null ? null : row[E[n]];
     const id = str(g('紀錄編號')); if (!id) continue;
-    const kindName = str(g('動作')), kind = Object.keys(KIND).find(k => KIND[k].name === kindName) || 'note';
+    const kindName = str(g('動作')), kind = str(g('動作代號')) || (acts.find(a => a.name === kindName) || {}).id || 'note';
     events.push({ id, key: addrKey(g('物件地址')), kind, how: str(g('結果')), note: str(g('備註')), ts: +str(g('時間戳')) || Date.parse(str(g('時間')).replace(/\//g, '-')) || Date.now(), mt: +str(g('修改戳')) || 0, device: str(g('裝置')), hasPhoto: str(g('照片')) !== '', deleted: str(g('已刪除')) === '是' });
   }
-  const C = {}; if (cfg) for (const row of cfg.rows) if (row && str(row[0])) C[str(row[0])] = row[1];
-  return { roster, events, cols, show: str(C['顯示欄位']) ? str(C['顯示欄位']).split('、') : null, title: str(C['名單']), rosterAt: +str(C['名單時間戳']) || 0, tmpl: str(C['簡訊範本']) };
+  return { roster, events, cols, conf, title: str(C['名單']), rosterAt: +str(C['名單時間戳']) || 0 };
 }
 async function loadFile(file) {
   let sheets;
@@ -365,16 +380,19 @@ async function loadFile(file) {
       if (!old) { S.events.push(e); add++; }
       else if ((e.mt || 0) > (old.mt || 0)) { Object.assign(old, e); upd++; }
     }
-    if (T.rosterAt > S.rosterAt || !Object.keys(S.roster).length) { S.roster = T.roster; S.rosterAt = T.rosterAt || Date.now(); S.title = T.title || S.title; S.cols = T.cols; if (T.show && !S.showEdited) S.show = T.show; }
-    if (T.tmpl && !S.tmplEdited) S.tmpl = T.tmpl;
+    if (T.rosterAt > S.rosterAt || !Object.keys(S.roster).length) { S.roster = T.roster; S.rosterAt = T.rosterAt || Date.now(); S.title = T.title || S.title; S.cols = T.cols; }
+    // 設定（動作、範本、稱呼、顯示欄位）：比較新的那台為準
+    if (T.conf && (T.conf.cfgAt || 0) > (S.cfgAt || 0)) for (const k of ['actions', 'primary', 'templates', 'sal', 'show', 'cfgAt']) if (T.conf[k] != null) S[k] = T.conf[k];
     save(); render();
     return toast(add || upd ? `已併入另一台的紀錄：新增 ${add} 筆${upd ? `、更新 ${upd} 筆` : ''}` : '這個檔案的紀錄都已經有了');
   }
   const R = parseRoster(sheets);
   if (!R) return alert('看不出這是催收表或送信紀錄。\n催收表要有「物件地址」「承租人」「連絡電話」這幾欄。');
   const n = Object.keys(R.roster).length, owe = Object.values(R.roster).filter(o => o.amount > 0).length;
-  if (Object.keys(S.roster).length && !confirm(`換成這份新名單？\n${R.title || file.name}：共 ${n} 戶，其中 ${owe} 戶有欠款。\n\n之前的送信紀錄會保留在工作日誌裡。`)) return;
-  S.roster = R.roster; S.rosterAt = Date.now(); S.title = R.title || file.name.replace(/\.\w+$/, ''); S.cols = R.cols;
+  if (Object.keys(S.roster).length && !confirm(`換成這份新名單？\n${R.title || file.name}：共 ${n} 戶，其中 ${owe} 戶有欠款。\n\n之前的紀錄會保留在工作日誌裡。`)) return;
+  S.roster = R.roster; S.rosterAt = Date.now(); S.title = R.title || file.name.replace(/\.\w+$/, ''); S.cols = R.cols; S.srcName = file.name;
+  // 原檔留在這台，之後「下載主表」時把紀錄寫回原本的欄位
+  try { await DB.set('kv', 'src', { name: file.name, buf: await file.arrayBuffer(), at: S.rosterAt }); } catch (e) {}
   save(); filter = 'todo'; render();
   toast(`已放入名單：${owe} 戶有欠款`);
 }
@@ -382,8 +400,8 @@ $('fileIn').onchange = () => { const f = $('fileIn').files[0]; $('fileIn').value
 window.addEventListener('dragover', e => e.preventDefault());
 window.addEventListener('drop', e => { e.preventDefault(); const f = [...e.dataTransfer.files].find(f => /\.xlsx?m?$/i.test(f.name)); if (f) loadFile(f); });
 
-/* ============ 卡片要顯示的欄位（使用者自己選） ============ */
-const isMoneyCol = h => /合計|小計|金額|租金|欠|費|款/.test(h) && !/日|名目|月份|方式/.test(h);
+/* ============ 卡片顯示的欄位 ============ */
+const isMoneyCol = h => /合計|小計|金額|租金|欠|費|款/.test(h) && !/日|名目|月份|方式|通知|提醒|聯繫|催/.test(h);
 function fmtVal(h, v) { return typeof v === 'number' ? (isMoneyCol(h) ? money(v) : String(v)) : String(v); }
 function shownCols() {
   const cols = S.cols && S.cols.length ? S.cols : ['承租人', '連絡電話', '合計', '逾期天數'];
@@ -406,63 +424,64 @@ function colsSheet() {
   const cols = S.cols && S.cols.length ? S.cols : ['承租人', '連絡電話', '合計', '逾期天數', '基地'];
   const on = new Set(shownCols());
   const sample = Object.values(S.roster).find(o => o.amount > 0) || Object.values(S.roster)[0];
-  openSheet(`<h3>🧩 卡片要顯示哪些欄位</h3><p class="hint">勾起來的會顯示在每一戶的卡片上（地址一定會顯示）。這些是催收表裡原本有的欄位。</p>
-    <div class="opts" id="colOpts" style="grid-template-columns:1fr 1fr">${cols.map(h => `<label class="btn" style="justify-content:flex-start"><input type="checkbox" value="${esc(h)}" ${on.has(h) ? 'checked' : ''}> ${esc(h)}</label>`).join('')}</div>
+  openSheet(`<h3>🧩 卡片要顯示哪些欄位</h3><p class="hint">勾起來的會顯示在每一戶的卡片上（地址一定會顯示）。</p>
+    <div class="opts" id="colOpts">${cols.map(h => `<label class="btn" style="justify-content:flex-start"><input type="checkbox" value="${esc(h)}" ${on.has(h) ? 'checked' : ''}> ${esc(h)}</label>`).join('')}</div>
     ${sample ? `<div class="hint">預覽：</div><div class="card" style="margin:6px 0 12px"><div class="addr">${esc(shortAddr(sample.addr))}</div><div class="meta" id="colPrev"></div></div>` : ''}
     <div class="row"><button class="small" id="colReset">還原預設</button><span class="grow"></span><button onclick="closeSheet()">取消</button><button class="primary" id="colSave">儲存</button></div>`);
   const pick = () => [...$('colOpts').querySelectorAll('input:checked')].map(i => i.value);
   const prev = () => { if (!sample) return; const keep = S.show; S.show = pick(); $('colPrev').innerHTML = metaHTML(sample) || '<span class="hint">（只顯示地址）</span>'; S.show = keep; };
   $('colOpts').addEventListener('change', prev); prev();
   $('colReset').onclick = () => { $('colOpts').querySelectorAll('input').forEach(i => i.checked = DEFAULT_SHOW.includes(i.value)); prev(); };
-  $('colSave').onclick = () => { S.show = pick(); S.showEdited = true; save(); closeSheet(); render(); toast('已更新卡片顯示的欄位'); };
+  $('colSave').onclick = () => { S.show = pick(); touchCfg(); closeSheet(); render(); toast('已更新卡片顯示的欄位'); };
 }
 
 /* ============ 畫面 ============ */
 function render() {
   const all = Object.values(S.roster).sort((a, b) => collator.compare(shortAddr(a.addr), shortAddr(b.addr)));
+  const P = primaryA();
   $('monthLbl').textContent = S.title ? `名單：${S.title}` : '';
-  // 同步提醒
+  const chips = document.querySelectorAll('#chips .chip');
+  chips[0].textContent = `還沒${P.name}`; chips[1].textContent = `已${P.name}`;
   const n = unsynced();
   $('syncbar').innerHTML = !all.length ? '' : n
     ? `<div class="syncbar">⚠ 有 <b>${n}</b> 筆紀錄還沒傳到${IS_PHONE ? '電腦' : '手機'}。<span class="grow"></span><button class="small primary" onclick="exportFile()">📤 現在傳</button></div>`
     : `<div class="syncbar clean">✓ 紀錄都已經傳出去了${S.lastExport ? `（${fmtTime(S.lastExport)}）` : ''}</div>`;
   const list = $('list');
   if (!all.length) {
-    list.innerHTML = `<div class="empty" style="grid-column:1/-1"><b>先放入名單</b>按右上角「📂 放入檔案」，選這個月公司給的催收表 Excel<br>（電腦上也可以直接把檔案拖進來）。<p class="hint">如果是另一台傳過來的「送信紀錄」檔案，一樣用「放入檔案」。</p></div>`;
+    list.innerHTML = `<div class="empty" style="grid-column:1/-1"><b>先放入名單</b>按右上角「📂 放入檔案」，選這個月的催收表（或合併表）Excel<br>（電腦上也可以直接把檔案拖進來）。<p class="hint">如果是另一台傳過來的「送信紀錄」檔案，一樣用「放入檔案」。</p></div>`;
     $('stat').textContent = ''; renderLog(); return;
   }
   const qs = query.normalize('NFKC').toLowerCase().split(/\s+/).filter(Boolean);
   const match = o => !qs.length || qs.every(q => (o.addr + ' ' + o.tenant + ' ' + o.phones.join(' ') + ' ' + shownCols().map(h => (o.extra || {})[h] ?? '').join(' ')).normalize('NFKC').toLowerCase().replace(/-/g, '').includes(q.replace(/-/g, '')));
   const owe = all.filter(o => o.amount > 0);
   const doneN = owe.filter(o => delivered(o.key)).length;
-  $('stat').textContent = `有欠款 ${owe.length} 戶｜已送 ${doneN}｜還沒送 ${owe.length - doneN}`;
-  // 剛剛才登記的那戶先留在「還沒送」裡，方便接著傳簡訊；換篩選或重新整理後才會移走
+  $('stat').textContent = `有欠款 ${owe.length} 戶｜已${P.name} ${doneN}｜還沒 ${owe.length - doneN}`;
   const shown = all.filter(o => filter === 'all' ? true : o.amount > 0 && (filter === 'done' ? delivered(o.key) : (!delivered(o.key) || justDone.has(o.key)))).filter(match);
-  list.innerHTML = shown.length ? shown.map(cardHTML).join('') : `<div class="empty" style="grid-column:1/-1">${qs.length ? '找不到符合的' : filter === 'todo' ? '🎉 都送完了' : '沒有資料'}</div>`;
+  list.innerHTML = shown.length ? shown.map(cardHTML).join('') : `<div class="empty" style="grid-column:1/-1">${qs.length ? '找不到符合的' : filter === 'todo' ? '🎉 都處理完了' : '沒有資料'}</div>`;
   list.querySelectorAll('[data-act]').forEach(b => b.onclick = () => act(b.dataset.act, b.dataset.key));
   list.querySelectorAll('[data-del]').forEach(x => x.onclick = () => delEvent(x.dataset.del));
-  list.querySelectorAll('[data-ph]').forEach(x => x.onclick = () => showPhoto(x.dataset.ph));
+  list.querySelectorAll('[data-ph]').forEach(x => x.onclick = ev => { ev.preventDefault(); showPhoto(x.dataset.ph); });
   renderLog();
 }
 function badge(e) {
-  const d = new Date(e.ts), cls = isFail(e) ? 'fail' : e.kind;
-  return `<span class="badge ${cls}">${fmtMD(d)} ${KIND[e.kind].name}${e.how ? '：' + esc(e.how) : ''}</span>`;
+  const a = A(e.kind), cls = isFail(e) ? 'fail' : a.type === 'sms' ? 'sms' : a.type === 'call' ? 'call' : e.kind === S.primary ? 'deliver' : '';
+  return `<span class="badge ${cls}">${fmtMD(new Date(e.ts))} ${esc(a.name)}${e.how ? '：' + esc(e.how) : ''}</span>`;
 }
 function cardHTML(o) {
-  const evs = evOf(o.key), done = delivered(o.key), mob = mobileOf(o.phones.join(' '));
-  const latestBy = k => evs.find(e => e.kind === k);
-  const badges = ['deliver', 'sms', 'call'].map(latestBy).filter(Boolean).map(badge).join('');
+  const evs = evOf(o.key), done = delivered(o.key), mob = mobileOf(o.phones.join(' ')), P = primaryA();
+  const seen = new Set(), badges = evs.filter(e => !seen.has(e.kind) && seen.add(e.kind)).slice(0, 4).map(badge).join('');
+  const others = S.actions.filter(a => a.id !== P.id && a.type !== 'sms' && a.type !== 'call');
   return `<div class="card ${done ? 'done' : ''}">
     <div class="addr">${esc(shortAddr(o.addr))}</div>
     <div class="meta">${metaHTML(o)}</div>
     ${badges ? `<div class="badges">${badges}</div>` : ''}
     <div class="acts">
-      <button class="${done ? '' : 'ok'}" data-act="deliver" data-key="${esc(o.key)}">✉ ${done ? '再記一次' : '送信'}</button>
+      <button class="${done ? '' : 'ok'}" data-act="${P.id}" data-key="${esc(o.key)}">${esc(P.icon)} ${done ? '再記一次' : esc(P.name)}</button>
       <button data-act="sms" data-key="${esc(o.key)}" ${mob ? '' : 'disabled title="沒有手機號碼"'}>💬 簡訊</button>
       <button data-act="call" data-key="${esc(o.key)}" ${o.phones.length ? '' : 'disabled'}>📞 電話</button>
     </div>
-    ${evs.length ? `<details><summary class="more">紀錄 ${evs.length} 筆</summary><div class="hist">${evs.map(e => `<div>${fmtTime(e.ts)}　${KIND[e.kind].name}${e.how ? '：' + esc(e.how) : ''}${e.note ? '　' + esc(e.note) : ''}${e.hasPhoto ? ` <a href="#" data-ph="${e.id}">📷</a>` : ''}<span class="x" data-del="${e.id}" title="刪除這筆">✕</span></div>`).join('')}</div></details>` : ''}
-    <button class="more" data-act="note" data-key="${esc(o.key)}">＋ 加備註</button>
+    <div class="row" style="gap:6px">${others.map(a => `<button class="small" data-act="${a.id}" data-key="${esc(o.key)}">${esc(a.icon)} ${esc(a.name)}</button>`).join('')}</div>
+    ${evs.length ? `<details><summary class="more">紀錄 ${evs.length} 筆</summary><div class="hist">${evs.map(e => `<div>${fmtTime(e.ts)}　${esc(A(e.kind).name)}${e.how ? '：' + esc(e.how) : ''}${e.note ? '　' + esc(e.note) : ''}${e.hasPhoto ? ` <a href="#" data-ph="${e.id}">📷</a>` : ''}<span class="x" data-del="${e.id}" title="刪除這筆">✕</span></div>`).join('')}</div></details>` : ''}
   </div>`;
 }
 document.querySelectorAll('#chips .chip').forEach(c => c.onclick = () => { filter = c.dataset.f; justDone.clear(); document.querySelectorAll('#chips .chip').forEach(x => x.classList.toggle('on', x === c)); render(); });
@@ -474,14 +493,15 @@ document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
 function renderLog() {
   const evs = liveEvents().sort((a, b) => b.ts - a.ts);
   $('logStat').textContent = `共 ${evs.length} 筆紀錄`;
-  $('logTable').innerHTML = `<tr><th>時間</th><th>地址</th><th>承租人</th><th>動作</th><th>結果</th><th>備註</th><th>裝置</th><th></th></tr>` +
-    (evs.map(e => { const o = S.roster[e.key] || {}; return `<tr><td>${fmtTime(e.ts)}</td><td>${esc(shortAddr(o.addr || e.key))}</td><td>${esc(o.tenant || '')}</td><td>${KIND[e.kind].name}</td><td${isFail(e) ? ' style="color:var(--danger)"' : ''}>${esc(e.how)}</td><td>${esc(e.note)}${e.hasPhoto ? ` <a href="#" data-ph="${e.id}">📷</a>` : ''}</td><td>${esc(e.device)}</td><td><span class="x" style="color:var(--danger);cursor:pointer" data-del="${e.id}">✕</span></td></tr>`; }).join('') || '<tr><td colspan="8" class="hint">還沒有紀錄</td></tr>');
+  $('logTable').innerHTML = `<tr><th>時間</th><th>地址</th><th>承租人</th><th>動作</th><th>結果</th><th>備註</th><th>寫回主表</th><th>裝置</th><th></th></tr>` +
+    (evs.map(e => { const o = S.roster[e.key] || {}, w = noteLine(e); return `<tr><td>${fmtTime(e.ts)}</td><td>${esc(shortAddr(o.addr || e.key))}</td><td>${esc(o.tenant || '')}</td><td>${esc(A(e.kind).name)}</td><td${isFail(e) ? ' style="color:var(--danger)"' : ''}>${esc(e.how)}</td><td>${esc(e.note)}${e.hasPhoto ? ` <a href="#" data-ph="${e.id}">📷</a>` : ''}</td><td class="hint">${w ? `${esc(w.col)}：${esc(w.text)}` : ''}</td><td>${esc(e.device)}</td><td><span class="x" style="color:var(--danger);cursor:pointer" data-del="${e.id}">✕</span></td></tr>`; }).join('') || '<tr><td colspan="9" class="hint">還沒有紀錄</td></tr>');
   $('logTable').querySelectorAll('[data-del]').forEach(x => x.onclick = () => delEvent(x.dataset.del));
   $('logTable').querySelectorAll('[data-ph]').forEach(x => x.onclick = ev => { ev.preventDefault(); showPhoto(x.dataset.ph); });
+  $('bMaster').classList.toggle('hidden', !S.srcName);
 }
 function delEvent(id) {
   const e = S.events.find(x => x.id === id); if (!e) return;
-  if (!confirm(`刪除這筆紀錄？\n${fmtTime(e.ts)} ${KIND[e.kind].name} ${e.how}`)) return;
+  if (!confirm(`刪除這筆紀錄？\n${fmtTime(e.ts)} ${A(e.kind).name} ${e.how}`)) return;
   e.deleted = true; e.mt = Date.now(); save(); render(); toast('已刪除');
 }
 
@@ -502,73 +522,220 @@ function shrinkPhoto(file) {
     im.src = url;
   });
 }
+const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+// 快速填入備註：例如「9月份通知」（捷運局的信不一定是這個月的）
+function quickHTML(a) {
+  if (!a.quick || !a.quick.length) return '';
+  const d = new Date(), m = d.getMonth() + 1, pm = m === 1 ? 12 : m - 1;
+  const items = a.quick.map(q => q.replace('上個月份', `${pm}月份`).replace('這個月份', `${m}月份`));
+  return `<div class="hint">這封是哪一份通知？（點一下帶入，也可以自己打）</div><div class="chips" style="margin-bottom:8px">${items.map(x => `<button class="chip" data-q="${esc(x)}">${esc(x)}</button>`).join('')}</div>`;
+}
+const who = o => `${esc(shortAddr(o.addr))}${o.tenant ? '｜' + esc(o.tenant) : ''}`;
 function act(kind, key) {
   const o = S.roster[key]; if (!o) return;
-  if (kind === 'sms') return smsSheet(o);
-  if (kind === 'call') return callStart(o);
-  const K = KIND[kind];
+  const a = A(kind);
+  if (a.type === 'sms') return smsSheet(o);
+  if (a.type === 'call') return callStart(o);
   let how = '', photo = null;
-  openSheet(`<h3>${kind === 'note' ? '加備註' : '✉ 送信登記'}</h3><div class="hint">${esc(shortAddr(o.addr))}${o.tenant ? '｜' + esc(o.tenant) : ''}</div>
-    ${K.opts.length ? `<div class="opts">${[...K.opts, ...K.fail].map(x => `<button data-how="${esc(x)}">${esc(x)}</button>`).join('')}</div>` : ''}
-    <textarea id="shNote" rows="2" placeholder="備註（可不填）。手機鍵盤上的🎤可以用講的" style="margin-top:${K.opts.length ? 0 : 12}px"></textarea>
+  const opts = [...a.results, ...a.fails];
+  openSheet(`<h3>${esc(a.icon)} ${esc(a.name)}</h3><div class="hint">${who(o)}</div>
+    ${opts.length ? `<div class="opts">${opts.map(x => `<button data-how="${esc(x)}">${esc(x)}</button>`).join('')}</div>` : ''}
+    ${quickHTML(a)}
+    <textarea id="shNote" rows="${a.type === 'note' ? 3 : 2}" placeholder="${a.type === 'note' ? '要記什麼？例如：已繳9月租金' : '補充說明（可不填）'}。手機鍵盤上的🎤可以用講的" style="margin-top:${opts.length ? 0 : 12}px"></textarea>
+    <div class="row" style="margin-top:8px"><span class="hint">哪一天：</span><input type="date" id="shDate" value="${todayISO()}" style="width:auto;padding:6px 10px"></div>
+    <div class="hint" id="shPrev" style="margin-top:6px"></div>
     <div class="row" style="margin-top:10px">
-      <label class="btn">📷 拍照留證<input type="file" accept="image/*" capture="environment" id="shPhoto"></label>
-      <span class="grow"></span><button onclick="closeSheet()">取消</button><button class="primary" id="shSave" ${K.opts.length ? 'disabled' : ''}>儲存</button>
+      <label class="btn">📷 拍照<input type="file" accept="image/*" capture="environment" id="shPhoto"></label>
+      <span class="grow"></span><button onclick="closeSheet()">取消</button><button class="primary" id="shSave" ${opts.length ? 'disabled' : ''}>儲存</button>
     </div><img class="photo hidden" id="shImg">`);
-  $('sheetBox').querySelectorAll('[data-how]').forEach(b => b.onclick = () => { how = b.dataset.how; $('sheetBox').querySelectorAll('[data-how]').forEach(x => x.classList.toggle('sel', x === b)); $('shSave').disabled = false; });
+  const tsOf = () => { const d = $('shDate').value; if (!d || d === todayISO()) return Date.now(); const [y, m, dd] = d.split('-').map(Number), n = new Date(); return new Date(y, m - 1, dd, n.getHours(), n.getMinutes()).getTime(); };
+  const prev = () => { const w = noteLine({ kind, how, note: $('shNote').value.trim(), ts: tsOf() }); $('shPrev').textContent = w ? `會寫回主表「${w.col}」：${w.text}` : ''; };
+  $('shNote').oninput = prev; $('shDate').onchange = prev;
+  $('sheetBox').querySelectorAll('[data-q]').forEach(b => b.onclick = () => { const ta = $('shNote'); ta.value = b.dataset.q; prev(); });
+  $('sheetBox').querySelectorAll('[data-how]').forEach(b => b.onclick = () => { how = b.dataset.how; $('sheetBox').querySelectorAll('[data-how]').forEach(x => x.classList.toggle('sel', x === b)); $('shSave').disabled = false; prev(); });
   $('shPhoto').onchange = async () => { const f = $('shPhoto').files[0]; if (!f) return; try { photo = await shrinkPhoto(f); $('shImg').src = photo; $('shImg').classList.remove('hidden'); } catch (e) { toast(e.message); } };
   $('shSave').onclick = async () => {
     const note = $('shNote').value.trim();
-    if (kind === 'note' && !note && !photo) return toast('請寫點東西或拍張照');
-    const e = addEvent(key, kind, how, note, !!photo);
+    if (a.type === 'note' && !note && !photo) return toast('請寫點東西或拍張照');
+    const ts = tsOf();
+    const e = addEvent(key, kind, how, note, !!photo, { ts, mt: Date.now() });
     if (photo) await DB.set('photos', e.id, photo);
-    closeSheet(); toast(kind === 'note' ? '已加備註' : `已登記：${how}`);
+    closeSheet(); toast(`已記錄：${a.name}${how ? ' ' + how : ''}`);
   };
+  prev();
 }
-// 簡訊：打開手機的簡訊 App，號碼和內容都填好；回來時問有沒有傳出去
-function fillTmpl(o) {
-  return S.tmpl.replace(/\{承租人\}/g, o.tenant || '').replace(/\{地址\}/g, shortAddr(o.addr)).replace(/\{欠款\}/g, money(o.amount)).replace(/\{日期\}/g, fmtMD(new Date())).replace(/\s{2,}/g, ' ').trim();
+
+/* ============ 簡訊 ============ */
+// 稱呼：公司用全名；個人抓姓氏＋先生／小姐（可以每戶改，會記住）
+const COMPANY_RE = /(公司|有限|股份|工作室|企業|商行|行號|事務所|協會|基金會|中心|診所|醫院|學校|銀行|社$|行$|店$)/;
+const DOUBLE_SURNAME = ['歐陽', '司馬', '諸葛', '上官', '司徒', '東方', '張簡', '范姜', '夏侯', '皇甫', '長孫', '慕容', '尉遲', '端木', '公孫', '令狐', '南宮', '西門', '左丘', '單于'];
+const isCompany = n => COMPANY_RE.test(n || '');
+function surname(n) { n = str(n).replace(/[\s\(（].*$/, ''); return DOUBLE_SURNAME.find(s => n.startsWith(s)) || n.slice(0, 1); }
+function salOptions(o) {
+  const n = str(o.tenant); if (!n) return ['您'];
+  if (isCompany(n)) return [n];
+  const s = surname(n); return [`${s}先生／小姐`, `${s}先生`, `${s}小姐`, n];
 }
-let pending = null; // { kind, key }
+function salOf(o) { const v = S.sal[o.key]; return v || salOptions(o)[0]; }
+const NUM = ['', '壹', '兩', '參', '肆', '伍', '陸', '柒', '捌', '玖', '拾'];
+const doorOf = a => shortAddr(a).replace(/^.*?(路|街|大道)(\d+段)?/, '');
+function owedOf(units) {
+  const txt = units.map(o => [o.extra && o.extra['項目'], o.extra && o.extra['欠繳名目']].join(' ')).join(' ');
+  const rent = /租金/.test(txt) || units.some(o => !o.extra || (!o.extra['項目'] && !o.extra['欠繳名目'])), mg = /管理費|清潔費/.test(txt);
+  return rent && mg ? '租金及管理費' : mg ? '管理費' : '租金';
+}
+function fillTmpl(text, o, units, opt) {
+  const us = units && units.length ? units : [o];
+  const base = us.map(u => u.base).find(Boolean) || '';
+  const join = arr => [...new Set(arr)].join('、');
+  return text.replace(/\{稱呼\}/g, opt.sal).replace(/\{承租人\}/g, o.tenant || '').replace(/\{社區\}/g, base.replace(/\(.*?\)|（.*?）/g, ''))
+    .replace(/\{門牌\}/g, join(us.map(u => doorOf(u.addr)))).replace(/\{地址\}/g, join(us.map(u => shortAddr(u.addr))))
+    .replace(/\{戶數\}/g, `${NUM[us.length] || us.length}戶`).replace(/\{欠繳\}/g, opt.owed).replace(/\{欠款\}/g, money(us.reduce((s, u) => s + (u.amount || 0), 0)))
+    .replace(/\{日期\}/g, fmtMD(new Date()));
+}
+let pending = null;
 function smsSheet(o) {
-  const mob = mobileOf(o.phones.join(' ')), body = fillTmpl(o);
-  const href = `sms:${mob}${IS_IOS ? '&' : '?'}body=${encodeURIComponent(body)}`;
-  openSheet(`<h3>💬 傳簡訊給 ${esc(o.tenant || shortAddr(o.addr))}</h3><div class="hint">${esc(mob)}</div>
-    <div class="smsprev" id="smsBody" contenteditable="plaintext-only">${esc(body)}</div>
-    <div class="hint">內容可以直接點上面改（只改這一則）。要改每次的固定內容，按右上角「⋯」→「簡訊內容」。</div>
+  const mob = mobileOf(o.phones.join(' '));
+  const siblings = Object.values(S.roster).filter(x => x.key !== o.key && x.amount > 0 && mobileOf(x.phones.join(' ')) === mob);
+  const st = { tmpl: S.templates.find(t => t.id === S.lastTmpl) || S.templates[0], sal: salOf(o), with: new Set(), owed: '', edited: false };
+  st.owed = owedOf([o]);
+  const units = () => [o, ...siblings.filter(x => st.with.has(x.key))];
+  openSheet(`<h3>💬 傳簡訊</h3><div class="hint">${who(o)}｜${esc(mob)}</div>
+    <div class="hint" style="margin-top:10px">用哪個範本</div><div class="chips" id="smT">${S.templates.map(t => `<button class="chip" data-t="${t.id}">${esc(t.name)}</button>`).join('')}</div>
+    <div class="hint" style="margin-top:10px">稱呼（會記住這一戶）</div><div class="chips" id="smS">${[...new Set([...salOptions(o), st.sal])].map(s => `<button class="chip" data-s="${esc(s)}">${esc(s)}</button>`).join('')}<button class="chip" data-s="__custom">✎ 自己打</button></div>
+    ${siblings.length ? `<div class="hint" style="margin-top:10px">同一支電話的其他戶，要一起寫進這則嗎？</div><div class="chips" id="smW">${siblings.map(x => `<button class="chip" data-w="${esc(x.key)}">＋ ${esc(doorOf(x.addr))}</button>`).join('')}</div>` : ''}
+    <div class="hint" style="margin-top:10px">欠繳項目</div><div class="chips" id="smO">${['租金', '管理費', '租金及管理費'].map(x => `<button class="chip" data-o="${x}">${x}</button>`).join('')}<button class="chip" data-o="__custom">✎ 自己打（例：10月份租金）</button></div>
+    <textarea id="smBody" rows="7" style="margin-top:12px;font-size:15px"></textarea>
+    <div class="hint">上面的內容可以直接改（只改這一則）。範本要長期修改，按右上「⋯」→「簡訊範本」。</div>
     <div class="row" style="margin-top:12px"><span class="grow"></span><button onclick="closeSheet()">取消</button>
-      <a class="btn primary" id="smsGo" href="${href}" style="text-decoration:none">打開簡訊 App ➜</a></div>
+      <a class="btn primary" id="smsGo" href="#" style="text-decoration:none">打開簡訊 App ➜</a></div>
     ${IS_PHONE ? '' : '<p class="hint">（電腦上按這個不一定能傳，請在手機上用）</p>'}`);
+  const regen = () => {
+    $('smT').querySelectorAll('[data-t]').forEach(b => b.classList.toggle('on', b.dataset.t === st.tmpl.id));
+    $('smS').querySelectorAll('[data-s]').forEach(b => b.classList.toggle('on', b.dataset.s === st.sal));
+    $('smO').querySelectorAll('[data-o]').forEach(b => b.classList.toggle('on', b.dataset.o === st.owed));
+    if ($('smW')) $('smW').querySelectorAll('[data-w]').forEach(b => b.classList.toggle('on', st.with.has(b.dataset.w)));
+    if (st.edited && !confirm('剛剛手動改過的內容會被換掉，確定嗎？')) return;
+    st.edited = false;
+    $('smBody').value = fillTmpl(st.tmpl.text, o, units(), st);
+  };
+  $('smBody').oninput = () => st.edited = true;
+  $('smT').querySelectorAll('[data-t]').forEach(b => b.onclick = () => { st.tmpl = S.templates.find(t => t.id === b.dataset.t); S.lastTmpl = st.tmpl.id; save(); regen(); });
+  $('smS').querySelectorAll('[data-s]').forEach(b => b.onclick = () => {
+    let v = b.dataset.s;
+    if (v === '__custom') { v = (prompt('稱呼要怎麼寫？例如：之間室內裝修有限公司 黃先生', st.sal) || '').trim(); if (!v) return; }
+    st.sal = v; S.sal[o.key] = v; touchCfg(); regen();
+  });
+  $('smO').querySelectorAll('[data-o]').forEach(b => b.onclick = () => {
+    let v = b.dataset.o;
+    if (v === '__custom') { v = (prompt('欠繳項目怎麼寫？例如：10月份租金、8-10月份管理費', st.owed) || '').trim(); if (!v) return; }
+    st.owed = v; regen();
+  });
+  if ($('smW')) $('smW').querySelectorAll('[data-w]').forEach(b => b.onclick = () => { st.with.has(b.dataset.w) ? st.with.delete(b.dataset.w) : st.with.add(b.dataset.w); st.owed = owedOf(units()); regen(); });
+  regen();
   $('smsGo').onclick = () => {
-    const b = $('smsBody').innerText.trim();
-    $('smsGo').href = `sms:${mob}${IS_IOS ? '&' : '?'}body=${encodeURIComponent(b)}`;
-    pending = { kind: 'sms', key: o.key, at: Date.now() }; closeSheet();
+    $('smsGo').href = `sms:${mob}${IS_IOS ? '&' : '?'}body=${encodeURIComponent($('smBody').value.trim())}`;
+    pending = { kind: 'sms', keys: units().map(u => u.key), at: Date.now(), note: st.tmpl.name }; closeSheet();
     if (!IS_PHONE) setTimeout(askPending, 600);
   };
 }
 function callStart(o) {
   const mob = mobileOf(o.phones.join(' ')) || str(o.phones[0]).replace(/[^\d#*+]/g, '');
-  pending = { kind: 'call', key: o.key, at: Date.now() };
+  pending = { kind: 'call', keys: [o.key], at: Date.now() };
   location.href = `tel:${mob}`;
   if (!IS_PHONE) setTimeout(askPending, 600);
 }
 function askPending() {
   if (!pending) return; const p = pending; pending = null;
-  const o = S.roster[p.key]; if (!o) return;
-  const K = KIND[p.kind];
-  openSheet(`<h3>${p.kind === 'sms' ? '簡訊有傳出去嗎？' : '電話結果？'}</h3><div class="hint">${esc(shortAddr(o.addr))}${o.tenant ? '｜' + esc(o.tenant) : ''}</div>
-    <div class="opts">${[...K.opts, ...K.fail].map(x => `<button data-how="${esc(x)}">${esc(x)}</button>`).join('')}</div>
-    <div class="row"><span class="grow"></span><button onclick="closeSheet()">不用記</button></div>`);
-  $('sheetBox').querySelectorAll('[data-how]').forEach(b => b.onclick = () => { addEvent(p.key, p.kind, b.dataset.how, ''); closeSheet(); toast(`已記錄：${K.name} ${b.dataset.how}`); });
+  const o = S.roster[p.keys[0]]; if (!o) return;
+  const a = A(p.kind);
+  openSheet(`<h3>${a.type === 'sms' ? '簡訊有傳出去嗎？' : '電話結果？'}</h3><div class="hint">${who(o)}${p.keys.length > 1 ? `（共 ${p.keys.length} 戶）` : ''}</div>
+    <div class="opts">${[...a.results, ...a.fails].map(x => `<button data-how="${esc(x)}">${esc(x)}</button>`).join('')}</div>
+    ${a.type === 'call' ? '<textarea id="cNote" rows="2" placeholder="對方說了什麼（可不填）"></textarea>' : ''}
+    <div class="row" style="margin-top:8px"><span class="grow"></span><button onclick="closeSheet()">不用記</button></div>`);
+  $('sheetBox').querySelectorAll('[data-how]').forEach(b => b.onclick = () => {
+    const note = $('cNote') ? $('cNote').value.trim() : (p.note || '');
+    p.keys.forEach(k => addEvent(k, p.kind, b.dataset.how, note));
+    closeSheet(); toast(`已記錄：${a.name} ${b.dataset.how}`);
+  });
 }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && pending && Date.now() - pending.at > 800) setTimeout(askPending, 300); });
+
+/* ============ 寫回主表 ============ */
+// 一筆紀錄要寫回哪一欄、寫什麼字
+function colOf(a) { const cols = S.cols || []; return (a.col || []).find(c => cols.includes(c)) || null; }
+function noteLine(e) {
+  const a = A(e.kind), col = colOf(a);
+  if (!col || !a.fmt) return null;
+  if (A(e.kind).fails.includes(e.how) && !a.writeFails) return null;
+  const note = str(e.note);
+  const text = a.fmt.replace(/\{日期\}/g, fmtMD(new Date(e.ts))).replace(/\{結果\}/g, e.how || '').replace(/\{，備註\}/g, note ? '，' + note : '').replace(/\{（備註）\}/g, note ? '（' + note + '）' : '').replace(/\{備註\}/g, note).replace(/\{動作\}/g, a.name).trim().replace(/^(\d{1,2}\/\d{1,2})(?=\d{1,2}\/\d{1,2})/, ''); // 備註自己寫了日期就不要重複
+  return text ? { col, text } : null;
+}
+async function exportMaster() {
+  const src = await DB.get('kv', 'src');
+  if (!src || !src.buf) return alert('這台沒有原本的催收表。請在「放入催收表」的那台電腦下載主表。');
+  const file = new File([src.buf], src.name);
+  const sheets = await readWorkbook(file), h = findHeader(sheets, m => '物件地址' in m && ('承租人' in m || '連絡電話' in m));
+  if (!h) return alert('原檔讀不到「物件地址」欄位');
+  // 每一戶在原檔的第幾列（合併表同一戶有兩列時，寫在第一列）
+  const rowOf = {};
+  for (let r = h.headerRow + 1; r < h.sheet.rows.length; r++) {
+    const a = str(((h.sheet.rows[r] || [])[h.map['物件地址']])); if (!a) continue;
+    const k = addrKey(a); if (!(k in rowOf)) rowOf[k] = r;
+  }
+  // 要寫的內容：這一輪的紀錄，依欄位分好
+  const want = {};
+  for (const e of liveEvents().filter(e => e.ts >= S.rosterAt).sort((a, b) => a.ts - b.ts)) {
+    const w = noteLine(e); if (!w || !(e.key in rowOf) || h.map[w.col] == null) continue;
+    const id = rowOf[e.key] + '|' + h.map[w.col];
+    (want[id] = want[id] || { r: rowOf[e.key], c: h.map[w.col], lines: [] }).lines.push(w.text);
+  }
+  const zip = await JSZip.loadAsync(src.buf);
+  const P = s => new DOMParser().parseFromString(s, 'application/xml');
+  const wb = P(await zip.file('xl/workbook.xml').async('string')), rels = P(await zip.file('xl/_rels/workbook.xml.rels').async('string'));
+  const sh = [...wb.getElementsByTagName('sheet')].find(s => s.getAttribute('name') === h.sheet.name);
+  let target = [...rels.getElementsByTagName('Relationship')].find(r => r.getAttribute('Id') === sh.getAttribute('r:id')).getAttribute('Target');
+  target = target.startsWith('/') ? target.slice(1) : 'xl/' + target.replace(/^\.\//, '');
+  const doc = P(await zip.file(target).async('string')), NS = doc.documentElement.namespaceURI;
+  const sd = doc.getElementsByTagName('sheetData')[0];
+  let n = 0, cells = 0;
+  for (const w of Object.values(want)) {
+    const R = w.r + 1, ref = colName(w.c) + R;
+    const old = str((h.sheet.rows[w.r] || [])[w.c]);
+    const add = w.lines.filter(t => !old.split('\n').map(s => s.trim()).includes(t));
+    if (!add.length) continue;
+    let row = [...sd.children].find(x => +x.getAttribute('r') === R);
+    if (!row) { row = doc.createElementNS(NS, 'row'); row.setAttribute('r', R); const nxt = [...sd.children].find(x => +x.getAttribute('r') > R); sd.insertBefore(row, nxt || null); }
+    let c = [...row.children].find(x => x.getAttribute('r') === ref);
+    if (c && c.getElementsByTagName('f').length) continue; // 公式格不動
+    if (!c) {
+      c = doc.createElementNS(NS, 'c'); c.setAttribute('r', ref);
+      const nxt = [...row.children].find(x => colIndex(x.getAttribute('r')) > w.c); row.insertBefore(c, nxt || null);
+      const above = [...sd.children].filter(x => +x.getAttribute('r') < R).reverse().map(x => [...x.children].find(y => colIndex(y.getAttribute('r')) === w.c)).find(y => y && y.getAttribute('s'));
+      if (above) c.setAttribute('s', above.getAttribute('s'));
+    }
+    while (c.firstChild) c.removeChild(c.firstChild);
+    c.setAttribute('t', 'inlineStr');
+    const is = doc.createElementNS(NS, 'is'), t = doc.createElementNS(NS, 't');
+    t.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
+    t.textContent = [old, ...add].filter(Boolean).join('\n');
+    is.appendChild(t); c.appendChild(is);
+    n += add.length; cells++;
+  }
+  zip.file(target, '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' + new XMLSerializer().serializeToString(doc).replace(/^<\?xml[^>]*\?>\s*/, ''));
+  const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', compression: 'DEFLATE' });
+  const d = new Date();
+  download(blob, `${src.name.replace(/\.\w+$/, '')}_已登記${pad(d.getMonth() + 1)}${pad(d.getDate())}.xlsx`);
+  toast(n ? `已把 ${n} 筆紀錄寫回主表（${cells} 格）` : '紀錄都已經在主表裡了，沒有新增');
+}
 
 /* ============ 輸出 Excel（傳到另一台／工作日誌） ============ */
 function colName(i) { let s = ''; i++; while (i > 0) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; }
 async function writeXlsx(sheets) {
   const zip = new JSZip();
   const sx = sh => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0">${sh.rows.length > 1 ? '<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>' : ''}</sheetView></sheetViews><cols>${(sh.widths || []).map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"${sh.hidden && sh.hidden.includes(i) ? ' hidden="1"' : ''}/>`).join('')}</cols><sheetData>${sh.rows.map((r, ri) => `<row r="${ri + 1}">${r.map((v, ci) => {
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0">${sh.rows.length > 1 && sh.head !== false ? '<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>' : ''}</sheetView></sheetViews><cols>${(sh.widths || []).map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"${sh.hidden && sh.hidden.includes(i) ? ' hidden="1"' : ''}/>`).join('')}</cols><sheetData>${sh.rows.map((r, ri) => `<row r="${ri + 1}">${r.map((v, ci) => {
     const ref = colName(ci) + (ri + 1), s = ri === 0 && sh.head !== false ? 1 : 2;
     if (v == null || v === '') return `<c r="${ref}" s="${s}"/>`;
     if (typeof v === 'number') return `<c r="${ref}" s="${s}"><v>${v}</v></c>`;
@@ -582,30 +749,20 @@ async function writeXlsx(sheets) {
   sheets.forEach((s, i) => zip.file(`xl/worksheets/sheet${i + 1}.xml`, sx(s)));
   return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', compression: 'DEFLATE' });
 }
-// 給下個月催收表用的註記（跟原表一樣的寫法，例如 10/29簡訊通知）
-function noteFor(key) {
-  const evs = liveEvents().filter(e => e.key === key && e.ts >= S.rosterAt).sort((a, b) => a.ts - b.ts);
-  const md = e => fmtMD(new Date(e.ts));
-  const sms = evs.filter(e => e.kind === 'sms' && !isFail(e)).map(e => `${md(e)}簡訊通知`);
-  const call = evs.filter(e => e.kind === 'call').map(e => `${md(e)}電話${/未接/.test(e.how) ? '未接' : /空號/.test(e.how) ? '空號' : '通知'}`);
-  const post = evs.filter(e => e.kind === 'deliver').map(e => isFail(e) ? `${md(e)}送信${e.how.replace(/（.*）/, '')}` : `${md(e)}貼單通知`);
-  return { sms: sms.join('\n'), call: call.join('\n'), post: post.join('\n') };
-}
 async function exportFile(asLog) {
   if (!Object.keys(S.roster).length && !S.events.length) return toast('還沒有資料');
   const all = Object.values(S.roster).sort((a, b) => collator.compare(shortAddr(a.addr), shortAddr(b.addr)));
-  const status = o => { const d = delivered(o.key); return d ? `已送 ${fmtMD(new Date(d.ts))}（${d.how}）` : o.amount > 0 ? '還沒送' : ''; };
+  const status = o => { const d = delivered(o.key); return d ? `已${primaryA().name} ${fmtMD(new Date(d.ts))}（${d.how}）` : o.amount > 0 ? `還沒${primaryA().name}` : ''; };
   const evs = S.events.slice().sort((a, b) => a.ts - b.ts);
+  const cols = S.cols && S.cols.length ? S.cols : ['承租人', '連絡電話', '合計', '逾期天數', '基地'];
+  const nC = cols.length;
+  const conf = { actions: S.actions, primary: S.primary, templates: S.templates, sal: S.sal, show: S.show, cfgAt: S.cfgAt };
   const sheets = [
-    (() => { const cols = S.cols && S.cols.length ? S.cols : ['承租人', '連絡電話', '合計', '逾期天數', '基地'];
-      const head = ['物件地址', ...cols, '這一輪狀態', '_承租人', '_電話', '_欠款', '_逾期', '_基地'];
-      const n = cols.length;
-      return { name: '名單', widths: [34, ...cols.map(h => Math.min(30, Math.max(8, h.length * 2 + 2))), 22, 8, 8, 8, 8, 8], hidden: [n + 2, n + 3, n + 4, n + 5, n + 6],
-        rows: [head, ...all.map(o => [o.addr, ...cols.map(h => o.extra && o.extra[h] != null ? o.extra[h] : (h === '承租人' ? o.tenant : h === '連絡電話' ? o.phones.join('\n') : h === '合計' ? o.amount : '')), status(o), o.tenant, o.phones.join('\n'), o.amount || 0, o.overdue ?? '', o.base])] }; })(),
-    { name: '紀錄', widths: [17, 30, 16, 6, 16, 30, 6, 6, 6, 14, 14, 14], hidden: [9, 10, 11], rows: [['時間', '物件地址', '承租人', '動作', '結果', '備註', '照片', '裝置', '已刪除', '紀錄編號', '時間戳', '修改戳'],
-      ...evs.map(e => { const o = S.roster[e.key] || {}; return [fmtTime(e.ts), o.addr || e.key, o.tenant || '', KIND[e.kind].name, e.how, e.note, e.hasPhoto ? '有' : '', e.device, e.deleted ? '是' : '', e.id, String(e.ts), String(e.mt || e.ts)]; })] },
-    { name: '催收表註記', widths: [34, 18, 18, 18], rows: [['物件地址', '簡訊提醒', '電話聯繫', '貼單通知'], ...all.filter(o => { const n = noteFor(o.key); return n.sms || n.call || n.post; }).map(o => { const n = noteFor(o.key); return [o.addr, n.sms, n.call, n.post]; })] },
-    { name: '設定', head: false, widths: [14, 60], rows: [['名單', S.title], ['名單時間戳', String(S.rosterAt)], ['簡訊範本', S.tmpl], ['顯示欄位', shownCols().join('、')], ['匯出時間', fmtTime(Date.now())], ['匯出裝置', DEVICE]] }
+    { name: '名單', widths: [34, ...cols.map(h => Math.min(30, Math.max(8, h.length * 2 + 2))), 22, 8, 8, 8, 8, 8], hidden: [nC + 2, nC + 3, nC + 4, nC + 5, nC + 6],
+      rows: [['物件地址', ...cols, '這一輪狀態', '_承租人', '_電話', '_欠款', '_逾期', '_基地'], ...all.map(o => [o.addr, ...cols.map(h => o.extra && o.extra[h] != null ? o.extra[h] : (h === '承租人' ? o.tenant : h === '連絡電話' ? o.phones.join('\n') : h === '合計' ? o.amount : '')), status(o), o.tenant, o.phones.join('\n'), o.amount || 0, o.overdue ?? '', o.base])] },
+    { name: '紀錄', widths: [17, 30, 16, 8, 14, 30, 24, 6, 6, 6, 14, 14, 14, 10], hidden: [10, 11, 12, 13], rows: [['時間', '物件地址', '承租人', '動作', '結果', '備註', '寫回主表', '照片', '裝置', '已刪除', '紀錄編號', '時間戳', '修改戳', '動作代號'],
+      ...evs.map(e => { const o = S.roster[e.key] || {}, w = noteLine(e); return [fmtTime(e.ts), o.addr || e.key, o.tenant || '', A(e.kind).name, e.how, e.note, w ? `${w.col}：${w.text}` : '', e.hasPhoto ? '有' : '', e.device, e.deleted ? '是' : '', e.id, String(e.ts), String(e.mt || e.ts), e.kind]; })] },
+    { name: '設定', head: false, widths: [14, 60], rows: [['名單', S.title], ['名單時間戳', String(S.rosterAt)], ['匯出時間', fmtTime(Date.now())], ['匯出裝置', DEVICE], ['設定JSON', JSON.stringify(conf)]] }
   ];
   const blob = await writeXlsx(sheets);
   const d = new Date(), stamp = `${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
@@ -614,51 +771,129 @@ async function exportFile(asLog) {
 }
 $('bExport').onclick = () => exportFile(false);
 $('bLogXlsx').onclick = () => exportFile(true);
+$('bMaster').onclick = exportMaster;
+
+/* ============ 設定：簡訊範本 ============ */
+function tmplListSheet() {
+  openSheet(`<h3>💬 簡訊範本</h3><p class="hint">傳簡訊時可以從這裡選一個。點範本可以修改。</p>
+    <div style="display:flex;flex-direction:column;gap:8px;margin:10px 0">${S.templates.map(t => `<button data-e="${t.id}" style="justify-content:space-between;text-align:left"><span><b>${esc(t.name)}</b><br><span class="hint">${esc(t.text.slice(0, 40))}…</span></span><span>✎</span></button>`).join('')}</div>
+    <div class="row"><button id="tAdd">＋ 新增範本</button><button class="small" id="tReset">還原成預設範本</button><span class="grow"></span><button onclick="closeSheet()">關閉</button></div>`);
+  $('sheetBox').querySelectorAll('[data-e]').forEach(b => b.onclick = () => tmplEditSheet(S.templates.find(t => t.id === b.dataset.e)));
+  $('tAdd').onclick = () => tmplEditSheet(null);
+  $('tReset').onclick = () => { if (!confirm('把範本換回預設的三個？自己新增或改過的會不見。')) return; S.templates = clone(DEFAULT_TEMPLATES); touchCfg(); tmplListSheet(); };
+}
+function tmplEditSheet(t) {
+  const isNew = !t; t = t || { id: 't' + uid(), name: '', text: '{稱呼}您好，' };
+  openSheet(`<h3>${isNew ? '新增範本' : '修改範本'}</h3>
+    <input type="text" id="tName" placeholder="範本名稱，例如：催繳（租金）" value="${esc(t.name)}">
+    <textarea id="tText" rows="8" style="margin-top:8px">${esc(t.text)}</textarea>
+    <div class="hint" style="margin:6px 0">點一下插入：</div><div class="chips">${TOKENS.map(x => `<button class="chip" data-tok="${x}">${x}</button>`).join('')}</div>
+    <div class="hint" style="margin-top:8px">{稱呼}＝王先生／小姐 或 公司名、{社區}＝美河市、{門牌}＝153號20樓之23、{戶數}＝壹戶／兩戶、{欠繳}＝租金／管理費（傳的時候可以改）</div>
+    <div class="smsprev" id="tPrev"></div>
+    <div class="row">${isNew ? '' : '<button class="danger small" id="tDel">刪除這個範本</button>'}<span class="grow"></span><button id="tBack">返回</button><button class="primary" id="tSave">儲存</button></div>`);
+  const sample = Object.values(S.roster).find(o => o.amount > 0) || { key: 'x', tenant: '王小明', addr: '新北市新店區中央路153號9樓之17', amount: 12552, base: '美河市', phones: [] };
+  const prev = () => $('tPrev').textContent = '預覽：\n' + fillTmpl($('tText').value, sample, [sample], { sal: salOf(sample), owed: owedOf([sample]) });
+  $('tText').oninput = prev; prev();
+  $('sheetBox').querySelectorAll('[data-tok]').forEach(b => b.onclick = () => { const ta = $('tText'), s = ta.selectionStart ?? ta.value.length; ta.value = ta.value.slice(0, s) + b.dataset.tok + ta.value.slice(ta.selectionEnd ?? s); ta.focus(); ta.selectionStart = ta.selectionEnd = s + b.dataset.tok.length; prev(); });
+  $('tBack').onclick = tmplListSheet;
+  if ($('tDel')) $('tDel').onclick = () => { if (S.templates.length <= 1) return toast('至少要留一個範本'); if (!confirm(`刪除「${t.name}」？`)) return; S.templates = S.templates.filter(x => x.id !== t.id); touchCfg(); tmplListSheet(); };
+  $('tSave').onclick = () => {
+    const name = $('tName').value.trim(), text = $('tText').value.trim();
+    if (!name || !text) return toast('名稱和內容都要填');
+    Object.assign(t, { name, text }); if (isNew) S.templates.push(t);
+    touchCfg(); toast('已儲存範本'); tmplListSheet();
+  };
+}
+
+/* ============ 設定：動作與寫回主表的欄位 ============ */
+function actListSheet() {
+  openSheet(`<h3>⚙ 動作與寫回主表</h3><p class="hint">每個動作的選項、要寫回主表哪一欄、寫成什麼字，都可以自己改。</p>
+    <div style="display:flex;flex-direction:column;gap:8px;margin:10px 0">${S.actions.map(a => { const c = colOf(a); return `<button data-e="${a.id}" style="justify-content:space-between;text-align:left"><span><b>${esc(a.icon)} ${esc(a.name)}</b>${a.id === S.primary ? '　<span class="badge deliver">主要</span>' : ''}<br><span class="hint">${c ? `寫回「${esc(c)}」：${esc(noteLine({ kind: a.id, how: a.results[0] || a.fails[0] || '', note: a.type === 'note' ? '已繳9月租金' : '', ts: Date.now() })?.text || '')}` : '不寫回主表'}</span></span><span>✎</span></button>`; }).join('')}</div>
+    <div class="row"><button id="aAdd">＋ 新增動作</button><button class="small" id="aReset">還原預設</button><span class="grow"></span><button onclick="closeSheet()">關閉</button></div>`);
+  $('sheetBox').querySelectorAll('[data-e]').forEach(b => b.onclick = () => actEditSheet(A(b.dataset.e)));
+  $('aAdd').onclick = () => actEditSheet(null);
+  $('aReset').onclick = () => { if (!confirm('動作換回預設？自己新增或改過的會不見（已記錄的紀錄不受影響）。')) return; S.actions = clone(DEFAULT_ACTIONS); S.primary = 'deliver'; touchCfg(); render(); actListSheet(); };
+}
+function actEditSheet(a) {
+  const isNew = !a; a = a || { id: 'a' + uid(), name: '', icon: '📌', type: 'generic', results: [], fails: [], col: [], fmt: '{日期}{動作}{結果}{，備註}', writeFails: true };
+  const cols = S.cols || [];
+  const cur = colOf(a) || (a.col || [])[0] || '';
+  openSheet(`<h3>${isNew ? '新增動作' : '修改動作'}</h3>
+    <div class="row"><input type="text" id="aIcon" value="${esc(a.icon)}" style="width:64px;text-align:center"><input type="text" id="aName" value="${esc(a.name)}" placeholder="動作名稱，例如：LINE 通知" style="flex:1"></div>
+    ${a.type === 'note' ? '' : `<div class="hint" style="margin-top:10px">選項（一行一個）。前面加 ✗ 的代表「沒成功」，例如 ✗無人在家</div>
+    <textarea id="aOpts" rows="5">${esc([...a.results, ...a.fails.map(x => '✗' + x)].join('\n'))}</textarea>`}
+    ${a.type === 'note' ? '' : `<div class="hint" style="margin-top:10px">常用補充說明（一行一個，登記時點一下帶入；「上個月份」「這個月份」會自動換成月份）</div>
+    <textarea id="aQuick" rows="2">${esc((a.quick || []).join('\n'))}</textarea>`}
+    <div class="hint" style="margin-top:10px">寫回主表哪一欄</div>
+    <select id="aCol"><option value="">不寫回主表</option>${[...new Set([...cols, ...(cur && !cols.includes(cur) ? [cur] : [])])].map(c => `<option ${c === cur ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
+    <div class="hint" style="margin-top:10px">寫成什麼字（{日期}＝10/29、{結果}＝選的選項、{備註}＝補充說明；{，備註}、{（備註）}＝有補充說明時才加上）</div>
+    <input type="text" id="aFmt" value="${esc(a.fmt)}">
+    ${a.type === 'note' ? '' : `<label class="row" style="margin-top:8px"><input type="checkbox" id="aWF" ${a.writeFails ? 'checked' : ''}> 「沒成功」的也寫回主表（例如 10/5電話未接）</label>`}
+    <label class="row" style="margin-top:6px"><input type="checkbox" id="aPri" ${a.id === S.primary ? 'checked' : ''} ${a.type !== 'generic' ? 'disabled' : ''}> 設為主要動作（卡片上的大按鈕，用來算「已處理／還沒處理」）</label>
+    <div class="smsprev" id="aPrev"></div>
+    <div class="row">${isNew || ['sms', 'call', 'note'].includes(a.type) ? '' : '<button class="danger small" id="aDel">刪除這個動作</button>'}<span class="grow"></span><button id="aBack">返回</button><button class="primary" id="aSave">儲存</button></div>`);
+  const read = () => {
+    const lines = $('aOpts') ? $('aOpts').value.split('\n').map(s => s.trim()).filter(Boolean) : [];
+    return { name: $('aName').value.trim(), icon: $('aIcon').value.trim() || '📌', results: lines.filter(s => !/^[✗xX]/.test(s)), fails: lines.filter(s => /^[✗xX]/.test(s)).map(s => s.replace(/^[✗xX]\s*/, '')), col: $('aCol').value ? [$('aCol').value] : [], fmt: $('aFmt').value, writeFails: $('aWF') ? $('aWF').checked : true, quick: $('aQuick') ? $('aQuick').value.split('\n').map(s => s.trim()).filter(Boolean) : [] };
+  };
+  const prev = () => { const r = read(), keep = S.actions; const tmp = Object.assign({}, a, r); S.actions = [...S.actions.filter(x => x.id !== a.id), tmp]; const w = noteLine({ kind: a.id, how: r.results[0] || r.fails[0] || '', note: '補充說明', ts: Date.now() }); S.actions = keep; $('aPrev').textContent = w ? `例：寫回「${w.col}」→ ${w.text}` : '例：不寫回主表'; };
+  $('sheetBox').querySelectorAll('input,textarea,select').forEach(el => el.addEventListener('input', prev)); prev();
+  $('aBack').onclick = actListSheet;
+  if ($('aDel')) $('aDel').onclick = () => { if (a.id === S.primary) return toast('主要動作不能刪，先把別的設為主要'); if (!confirm(`刪除「${a.name}」？已記錄的紀錄會保留。`)) return; S.actions = S.actions.filter(x => x.id !== a.id); touchCfg(); render(); actListSheet(); };
+  $('aSave').onclick = () => {
+    const r = read(); if (!r.name) return toast('請填動作名稱');
+    if (a.type === 'generic' && !r.results.length && !r.fails.length) return toast('至少要有一個選項');
+    Object.assign(a, r); if (isNew) S.actions.push(a);
+    if ($('aPri').checked) S.primary = a.id;
+    touchCfg(); render(); toast('已儲存'); actListSheet();
+  };
+}
 
 /* ============ 選單 ============ */
-$('bMenu').onclick = () => openSheet(`<h3>其他</h3>
+$('bMenu').onclick = () => openSheet(`<h3>設定</h3>
   <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
+    <button id="mTmpl">💬 簡訊範本</button>
+    <button id="mAct">⚙ 動作與寫回主表的欄位</button>
     <button id="mCols">🧩 卡片要顯示哪些欄位</button>
-    <button id="mTmpl">💬 簡訊內容（每次的固定文字）</button>
+    <button id="mMaster" ${S.srcName ? '' : 'disabled'}>📥 下載主表（紀錄寫回原本的欄位）</button>
     <button id="mHelp">❓ 怎麼用</button>
     <button class="danger" id="mWipe">🗑 清空這台的所有資料</button>
     <button onclick="closeSheet()">關閉</button>
   </div>`) ?? bindMenu();
 function bindMenu() {
+  $('mTmpl').onclick = tmplListSheet;
+  $('mAct').onclick = actListSheet;
   $('mCols').onclick = colsSheet;
-  $('mTmpl').onclick = () => {
-    openSheet(`<h3>💬 簡訊內容</h3><p class="hint">可以用的代號：{承租人}、{地址}、{欠款}、{日期}，傳的時候會自動換成那一戶的資料。</p>
-      <textarea id="tmplIn" rows="5">${esc(S.tmpl)}</textarea>
-      <div class="smsprev" id="tmplPrev"></div>
-      <div class="row"><button id="tmplReset" class="small">還原成預設</button><span class="grow"></span><button onclick="closeSheet()">取消</button><button class="primary" id="tmplSave">儲存</button></div>`);
-    const sample = Object.values(S.roster).find(o => o.amount > 0) || { tenant: '王小明', addr: '中央路153號9樓之17', amount: 12552 };
-    const prev = () => { const t = S.tmpl; S.tmpl = $('tmplIn').value; $('tmplPrev').textContent = '預覽：' + fillTmpl(sample); S.tmpl = t; };
-    $('tmplIn').oninput = prev; prev();
-    $('tmplReset').onclick = () => { $('tmplIn').value = DEFAULT_TMPL; prev(); };
-    $('tmplSave').onclick = () => { S.tmpl = $('tmplIn').value.trim() || DEFAULT_TMPL; S.tmplEdited = true; save(); closeSheet(); toast('已儲存簡訊內容'); };
-  };
+  $('mMaster').onclick = () => { closeSheet(); exportMaster(); };
   $('mHelp').onclick = () => openSheet(`<h3>❓ 怎麼用</h3>
     <ol style="line-height:1.9;padding-left:20px;margin:10px 0">
-      <li><b>電腦</b>：「📂 放入檔案」選這個月的催收表 → 「📤 傳到另一台」→ 把存好的檔案用 LINE 傳給自己</li>
-      <li><b>手機</b>：在 LINE 把檔案存下來 → 打開這個網頁 →「📂 放入檔案」選那個檔案</li>
-      <li><b>送信時</b>：搜尋地址 → 按「✉ 送信」選怎麼送的；要通知的按「💬 簡訊」或「📞 電話」</li>
-      <li><b>送完</b>：手機按「📤 傳到另一台」→ 用 LINE 傳回電腦 → 電腦「📂 放入檔案」，紀錄就會合併進來</li>
-      <li><b>工作日誌</b>：電腦上點「工作日誌」→「⬇ 下載工作日誌 Excel」。裡面的「催收表註記」可以直接貼到下個月的催收表</li>
+      <li><b>電腦</b>：「📂 放入檔案」選這個月的催收表 →「📤 傳到另一台」→ 用 LINE 傳給自己</li>
+      <li><b>手機</b>：LINE 把檔案存下來 → 打開這個網頁 →「📂 放入檔案」選那個檔案</li>
+      <li><b>外出時</b>：搜尋地址 → 按送信、簡訊、電話、對方回覆、拜訪、備註</li>
+      <li><b>做完</b>：手機「📤 傳到另一台」→ LINE 傳回電腦 → 電腦「📂 放入檔案」</li>
+      <li><b>寫回主表</b>：電腦上「工作日誌」→「📥 下載主表」，紀錄會寫進原本催收表的「簡訊提醒」「電話聯繫」「貼單通知」「備註」欄</li>
     </ol>
     <p class="hint">資料只存在這台電腦／手機的瀏覽器裡，不會上傳到任何地方。照片只存在拍照的那台手機。</p>
     <div class="row"><span class="grow"></span><button onclick="closeSheet()">關閉</button></div>`);
   $('mWipe').onclick = async () => {
-    if (!confirm(`確定清空這台的所有資料？\n名單、${liveEvents().length} 筆紀錄、照片都會刪掉。`)) return;
+    if (!confirm(`確定清空這台的所有資料？\n名單、${liveEvents().length} 筆紀錄、照片、範本和設定都會回到最初。`)) return;
     if (prompt('最後確認：請輸入「清空」兩個字') !== '清空') return toast('沒有清空');
-    S = { title: '', rosterAt: 0, roster: {}, events: [], tmpl: DEFAULT_TMPL, lastExport: 0, cols: [], show: null };
-    await DB.set('kv', 'state', S); await DB.clear('photos'); closeSheet(); render(); toast('已清空');
+    S = blankState();
+    await DB.set('kv', 'state', S); await DB.set('kv', 'src', null); await DB.clear('photos'); closeSheet(); render(); toast('已清空');
   };
 }
 
 /* ============ 啟動 ============ */
 (async function init() {
   await DB.open();
-  try { const s = await DB.get('kv', 'state'); if (s) S = Object.assign(S, s); } catch (e) {}
+  try {
+    const s = await DB.get('kv', 'state');
+    if (s) {
+      S = Object.assign(blankState(), s);
+      if (s.tmpl && !s.templates) S.templates = clone(DEFAULT_TEMPLATES); // 舊版只有一個範本
+      for (const d of DEFAULT_ACTIONS) if (!S.actions.find(a => a.id === d.id) && ['reply', 'visit'].includes(d.id) && !s.actions) S.actions.push(clone(d));
+    }
+  } catch (e) {}
   render();
 })();
 </script>
