@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1c6b8f">
+<title>租屋代管工具</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<style>
+  body{margin:0;background:#eef0ec;color:#1d2327;font:16px/1.6 "Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif}
+  main{max-width:640px;margin:0 auto;padding:32px 18px}
+  h1{font-size:24px;margin:0 0 4px}
+  p.sub{color:#5f676d;margin:0 0 24px}
+  a.tool{display:flex;gap:16px;align-items:center;background:#fff;border:1px solid #d6d9d3;border-radius:16px;padding:18px;text-decoration:none;color:inherit}
+  a.tool:hover{border-color:#1c6b8f}
+  a.tool img{width:64px;height:64px;border-radius:14px}
+  a.tool b{font-size:19px;display:block}
+  .note{margin-top:24px;font-size:14px;color:#5f676d;background:#fff;border-radius:12px;padding:14px 16px;border:1px solid #e3e6e1}
+</style>
+</head>
+<body>
+<main>
+  <h1>租屋代管工具</h1>
+  <p class="sub">資料都只存在你自己的手機或電腦裡，不會上傳到任何地方。</p>
+  <a class="tool" href="send.html"><img src="icon-192.png" alt=""><span><b>📮 送信登記</b>送催繳信登記、一鍵傳簡訊、打電話、工作日誌</span></a>
+  <div class="note"><b>放到手機桌面：</b>用 Chrome 打開「送信登記」→ 右上角「⋮」→「加到主畫面」，桌面就會有圖示，點開跟 App 一樣，沒網路也能開。</div>
+</main>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>
