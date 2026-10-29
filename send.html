@@ -372,7 +372,14 @@ function parseTransfer(sheets) {
 async function loadFile(file) {
   let sheets;
   try { sheets = await readWorkbook(file); } catch (e) { return alert(e.message || e); }
-  const T = parseTransfer(sheets);
+  const ours = sheets.find(s => s.name === '_送信紀錄');
+  const T = ours ? parseTransfer([{ name: '紀錄', rows: ours.rows }, { name: '名單', rows: [['物件地址']] }, { name: '設定', rows: (sheets.find(s => s.name === '_送信設定') || { rows: [] }).rows }]) : parseTransfer(sheets);
+  if (ours && T) {
+    // 原本的表＋隱藏紀錄：名單從表本身讀，紀錄從隱藏分頁讀
+    const R = parseRoster(sheets.filter(s => !OUR_SHEETS.includes(s.name)));
+    if (R) { T.roster = R.roster; T.cols = R.cols; T.title = T.title || R.title; }
+    if (T.rosterAt > S.rosterAt || !Object.keys(S.roster).length) { try { await DB.set('kv', 'src', { name: file.name, buf: await file.arrayBuffer(), at: T.rosterAt }); S.srcName = file.name; } catch (e) {} }
+  }
   if (T) {
     let add = 0, upd = 0;
     for (const e of T.events) {
@@ -672,11 +679,12 @@ function noteLine(e) {
   const text = a.fmt.replace(/\{日期\}/g, fmtMD(new Date(e.ts))).replace(/\{結果\}/g, e.how || '').replace(/\{，備註\}/g, note ? '，' + note : '').replace(/\{（備註）\}/g, note ? '（' + note + '）' : '').replace(/\{備註\}/g, note).replace(/\{動作\}/g, a.name).trim().replace(/^(\d{1,2}\/\d{1,2})(?=\d{1,2}\/\d{1,2})/, ''); // 備註自己寫了日期就不要重複
   return text ? { col, text } : null;
 }
-async function exportMaster() {
+// 用原本那份 Excel：紀錄寫回原欄位，再藏兩個隱藏分頁放紀錄和設定（外觀跟原檔一模一樣）
+async function buildMaster() {
   const src = await DB.get('kv', 'src');
-  if (!src || !src.buf) return alert('這台沒有原本的催收表。請在「放入催收表」的那台電腦下載主表。');
+  if (!src || !src.buf) return null;
   const file = new File([src.buf], src.name);
-  const sheets = await readWorkbook(file), h = findHeader(sheets, m => '物件地址' in m && ('承租人' in m || '連絡電話' in m));
+  const sheets = (await readWorkbook(file)).filter(s => !OUR_SHEETS.includes(s.name)), h = findHeader(sheets, m => '物件地址' in m && ('承租人' in m || '連絡電話' in m));
   if (!h) return alert('原檔讀不到「物件地址」欄位');
   // 每一戶在原檔的第幾列（合併表同一戶有兩列時，寫在第一列）
   const rowOf = {};
@@ -724,10 +732,53 @@ async function exportMaster() {
     n += add.length; cells++;
   }
   zip.file(target, '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' + new XMLSerializer().serializeToString(doc).replace(/^<\?xml[^>]*\?>\s*/, ''));
+  await putHiddenSheets(zip, dataSheets());
   const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', compression: 'DEFLATE' });
+  return { blob, name: src.name.replace(/\.\w+$/, '').replace(/_已登記\d{4}(-\d{4})?$/, ''), n, cells };
+}
+async function exportMaster() {
+  const M = await buildMaster();
+  if (!M) return alert('這台沒有原本的催收表，請在放入催收表的那台下載。');
   const d = new Date();
-  download(blob, `${src.name.replace(/\.\w+$/, '')}_已登記${pad(d.getMonth() + 1)}${pad(d.getDate())}.xlsx`);
-  toast(n ? `已把 ${n} 筆紀錄寫回主表（${cells} 格）` : '紀錄都已經在主表裡了，沒有新增');
+  download(M.blob, `${M.name}_已登記${pad(d.getMonth() + 1)}${pad(d.getDate())}.xlsx`);
+  toast(M.n ? `已把 ${M.n} 筆紀錄寫回主表` : '紀錄都已經在主表裡了');
+}
+// 隱藏分頁：放紀錄和設定，讓另一台放進來時讀得到
+const OUR_SHEETS = ['_送信紀錄', '_送信設定'];
+function dataSheets() {
+  const evs = S.events.slice().sort((a, b) => a.ts - b.ts);
+  const conf = { actions: S.actions, primary: S.primary, templates: S.templates, sal: S.sal, show: S.show, cfgAt: S.cfgAt };
+  return [
+    { name: '_送信紀錄', rows: [['時間', '物件地址', '承租人', '動作', '結果', '備註', '寫回主表', '照片', '裝置', '已刪除', '紀錄編號', '時間戳', '修改戳', '動作代號'],
+      ...evs.map(e => { const o = S.roster[e.key] || {}, w = noteLine(e); return [fmtTime(e.ts), o.addr || e.key, o.tenant || '', A(e.kind).name, e.how, e.note, w ? `${w.col}：${w.text}` : '', e.hasPhoto ? '有' : '', e.device, e.deleted ? '是' : '', e.id, String(e.ts), String(e.mt || e.ts), e.kind]; })] },
+    { name: '_送信設定', rows: [['名單', S.title], ['名單時間戳', String(S.rosterAt)], ['匯出時間', fmtTime(Date.now())], ['匯出裝置', DEVICE], ['設定JSON', JSON.stringify(conf)]] }
+  ];
+}
+async function putHiddenSheets(zip, list) {
+  const P = s => new DOMParser().parseFromString(s, 'application/xml'), X = d => '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' + new XMLSerializer().serializeToString(d).replace(/^<\?xml[^>]*\?>\s*/, '');
+  const wb = P(await zip.file('xl/workbook.xml').async('string')), rels = P(await zip.file('xl/_rels/workbook.xml.rels').async('string')), ct = P(await zip.file('[Content_Types].xml').async('string'));
+  const sheetsEl = wb.getElementsByTagName('sheets')[0], relRoot = rels.documentElement, R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  // 先拿掉舊的隱藏分頁（重複匯出時）
+  for (const s of [...sheetsEl.getElementsByTagName('sheet')].filter(s => OUR_SHEETS.includes(s.getAttribute('name')))) {
+    const rid = s.getAttribute('r:id'), rel = [...relRoot.getElementsByTagName('Relationship')].find(r => r.getAttribute('Id') === rid);
+    if (rel) { const tg = rel.getAttribute('Target'), path = tg.startsWith('/') ? tg.slice(1) : 'xl/' + tg; zip.remove(path); const ov = [...ct.getElementsByTagName('Override')].find(o => o.getAttribute('PartName') === '/' + path); if (ov) ov.remove(); rel.remove(); }
+    s.remove();
+  }
+  let maxId = Math.max(0, ...[...sheetsEl.getElementsByTagName('sheet')].map(s => +s.getAttribute('sheetId')));
+  list.forEach((sh, i) => {
+    const path = `worksheets/songxin${i + 1}.xml`, rid = 'rIdSx' + (i + 1);
+    zip.file('xl/' + path, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${sh.rows.map((r, ri) => `<row r="${ri + 1}">${r.map((v, ci) => v == null || v === '' ? '' : typeof v === 'number' ? `<c r="${colName(ci)}${ri + 1}"><v>${v}</v></c>` : `<c r="${colName(ci)}${ri + 1}" t="inlineStr"><is><t xml:space="preserve">${xesc(v)}</t></is></c>`).join('')}</row>`).join('')}</sheetData></worksheet>`);
+    const s = wb.createElementNS(wb.documentElement.namespaceURI, 'sheet');
+    s.setAttribute('name', sh.name); s.setAttribute('sheetId', ++maxId); s.setAttribute('state', 'hidden'); s.setAttributeNS(R_NS, 'r:id', rid);
+    sheetsEl.appendChild(s);
+    const rel = rels.createElementNS(relRoot.namespaceURI, 'Relationship');
+    rel.setAttribute('Id', rid); rel.setAttribute('Type', 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet'); rel.setAttribute('Target', path);
+    relRoot.appendChild(rel);
+    const ov = ct.createElementNS(ct.documentElement.namespaceURI, 'Override');
+    ov.setAttribute('PartName', '/xl/' + path); ov.setAttribute('ContentType', 'application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml');
+    ct.documentElement.appendChild(ov);
+  });
+  zip.file('xl/workbook.xml', X(wb)); zip.file('xl/_rels/workbook.xml.rels', X(rels)); zip.file('[Content_Types].xml', X(ct));
 }
 
 /* ============ 輸出 Excel（傳到另一台／工作日誌） ============ */
@@ -751,6 +802,16 @@ async function writeXlsx(sheets) {
 }
 async function exportFile(asLog) {
   if (!Object.keys(S.roster).length && !S.events.length) return toast('還沒有資料');
+  if (!asLog) {
+    // 傳到另一台：跟原本那份 Excel 長得一模一樣（紀錄已寫進原欄位），另一台放進來就能接著用
+    const M = await buildMaster();
+    if (M) {
+      const d = new Date();
+      download(M.blob, `${M.name}_已登記${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.xlsx`);
+      S.lastExport = Date.now(); save(); render();
+      return toast(IS_PHONE ? '已存好檔案（跟原本的表一樣），用 LINE 傳到電腦，再「放入檔案」' : '已存好檔案（跟原本的表一樣），用 LINE 傳到手機，再「放入檔案」');
+    }
+  }
   const all = Object.values(S.roster).sort((a, b) => collator.compare(shortAddr(a.addr), shortAddr(b.addr)));
   const status = o => { const d = delivered(o.key); return d ? `已${primaryA().name} ${fmtMD(new Date(d.ts))}（${d.how}）` : o.amount > 0 ? `還沒${primaryA().name}` : ''; };
   const evs = S.events.slice().sort((a, b) => a.ts - b.ts);
