@@ -289,7 +289,7 @@ const TOKENS = ['{稱呼}', '{社區}', '{門牌}', '{地址}', '{戶數}', '{�
 
 /* ============ 狀態 ============ */
 const clone = x => JSON.parse(JSON.stringify(x));
-const blankState = () => ({ title: '', rosterAt: 0, roster: {}, events: [], lastExport: 0, cols: [], show: null, actions: clone(DEFAULT_ACTIONS), primary: 'deliver', templates: clone(DEFAULT_TEMPLATES), lastTmpl: 't1', sal: {}, cfgAt: 0, srcName: '' });
+const blankState = () => ({ title: '', rosterAt: 0, roster: {}, events: [], lastExport: 0, cols: [], show: null, actions: clone(DEFAULT_ACTIONS), primary: 'deliver', templates: clone(DEFAULT_TEMPLATES), lastTmpl: 't1', sal: {}, cfgAt: 0, srcName: '', tags: {}, customItems: ['延遲金'] });
 let S = blankState();
 const DEFAULT_SHOW = ['承租人', '連絡電話', '合計', '逾期天數'];
 let filter = 'todo', query = '';
@@ -305,12 +305,14 @@ const liveEvents = () => S.events.filter(e => !e.deleted);
 const evOf = key => liveEvents().filter(e => e.key === key).sort((a, b) => b.ts - a.ts);
 // 這一輪是否「已處理」：主要動作適用的每個項目，都至少成功做過一次
 function delivered(key) {
-  const o = S.roster[key], ok = l => evsForItem(key, l).find(e => e.kind === S.primary && !isFail(e) && inRound(e));
+  const o = S.roster[key], ok = l => evsForItem(key, l).find(e => e.kind === S.primary && !isFail(e) && inRoundFor(e, l));
   const its = ((o && o.items) || []).filter(l => applicable(primaryA(), l));
   return its.length ? (its.every(ok) ? ok(its[0]) : null) : evOf(key).find(e => e.kind === S.primary && !isFail(e) && inRound(e));
 }
 // 這一輪的紀錄：放入名單之後才登記的（補登以前日期的也算）
 const inRound = e => Math.max(e.ts || 0, e.mt || 0) >= S.rosterAt;
+// 自己維護的項目（延遲金）跨月份累計，不跟著每月名單重算
+const inRoundFor = (e, l) => (l && S.customItems.includes(itemType(l))) || inRound(e);
 const unsynced = () => S.events.filter(e => (e.mt || e.ts) > S.lastExport).length;
 function addEvent(key, kind, how, note, hasPhoto, extra) {
   const e = Object.assign({ id: uid(), key, kind, how: how || '', note: note || '', ts: Date.now(), mt: Date.now(), device: DEVICE, hasPhoto: !!hasPhoto }, extra || {});
@@ -337,6 +339,7 @@ function parseRoster(sheets) {
     const key = addrKey(addr);
     const o = roster[key] || (roster[key] = { key, addr, tenant: '', phones: [], amount: 0, overdue: null, base: '', extra: {}, items: [] });
     const lab = itemLabel(g); if (lab && !o.items.includes(lab)) o.items.push(lab);
+    o.baseItems = o.items.slice();
     for (const h of cols) {
       let v = g(h); if (v == null || v === '') continue;
       if (isDate(v)) v = fmtMD(v);
@@ -402,15 +405,15 @@ async function loadFile(file) {
     }
     if (T.rosterAt > S.rosterAt || !Object.keys(S.roster).length) { S.roster = T.roster; S.rosterAt = T.rosterAt || Date.now(); S.title = T.title || S.title; S.cols = T.cols; }
     // 設定（動作、範本、稱呼、顯示欄位）：比較新的那台為準
-    if (T.conf && (T.conf.cfgAt || 0) > (S.cfgAt || 0)) for (const k of ['actions', 'primary', 'templates', 'sal', 'show', 'cfgAt']) if (T.conf[k] != null) S[k] = T.conf[k];
-    save(); render();
+    if (T.conf && (T.conf.cfgAt || 0) > (S.cfgAt || 0)) for (const k of ['actions', 'primary', 'templates', 'sal', 'show', 'tags', 'customItems', 'cfgAt']) if (T.conf[k] != null) S[k] = T.conf[k];
+    applyTags(); save(); render();
     return toast(add || upd ? `已併入另一台的紀錄：新增 ${add} 筆${upd ? `、更新 ${upd} 筆` : ''}` : '這個檔案的紀錄都已經有了');
   }
   const R = parseRoster(sheets);
   if (!R) return alert('看不出這是催收表或送信紀錄。\n催收表要有「物件地址」「承租人」「連絡電話」這幾欄。');
   const n = Object.keys(R.roster).length, owe = Object.values(R.roster).filter(o => o.amount > 0).length;
   if (Object.keys(S.roster).length && !confirm(`換成這份新名單？\n${R.title || file.name}：共 ${n} 戶，其中 ${owe} 戶有欠款。\n\n之前的紀錄會保留在工作日誌裡。`)) return;
-  S.roster = R.roster; S.rosterAt = Date.now(); S.title = R.title || file.name.replace(/\.\w+$/, ''); S.cols = R.cols; S.srcName = file.name;
+  S.roster = R.roster; S.rosterAt = Date.now(); S.title = R.title || file.name.replace(/\.\w+$/, ''); S.cols = R.cols; S.srcName = file.name; applyTags();
   // 原檔留在這台，之後「下載主表」時把紀錄寫回原本的欄位
   try { await DB.set('kv', 'src', { name: file.name, buf: await file.arrayBuffer(), at: S.rosterAt }); } catch (e) {}
   save(); filter = 'todo'; render();
@@ -442,6 +445,45 @@ function itemPicker(o, onChange, a) {
     bind() { const box = $(id); if (!box) return; box.querySelectorAll('[data-it]').forEach(b => b.onclick = () => { const l = b.dataset.it; if (sel.has(l) && sel.size > 1) sel.delete(l); else sel.add(l); box.querySelectorAll('[data-it]').forEach(x => x.classList.toggle('on', sel.has(x.dataset.it))); onChange && onChange(); }); },
     get: () => its.filter(l => sel.has(l))
   };
+}
+
+/* ============ 自己維護的項目（例如延遲金）：勾選哪幾戶有，跨月份保留 ============ */
+const owes = o => o.amount > 0 || !!o.virtual || (o.items || []).some(l => S.customItems.includes(itemType(l)));
+function applyTags() {
+  for (const [k, o] of Object.entries(S.roster)) {
+    if (o.virtual) { delete S.roster[k]; continue; }
+    if (o.baseItems) o.items = o.baseItems.slice(); else o.baseItems = (o.items || []).slice();
+  }
+  for (const [k, tg] of Object.entries(S.tags || {})) {
+    const its = (tg.items || []).filter(x => S.customItems.includes(x));
+    if (!its.length) continue;
+    let o = S.roster[k];
+    // 這個月合併表裡沒有這一戶（例如租金已繳），但他自己標了延遲金 → 照樣列出來
+    if (!o) o = S.roster[k] = { key: k, addr: tg.addr, tenant: tg.tenant || '', phones: tg.phones || [], amount: 0, overdue: null, base: tg.base || '', extra: {}, items: [], baseItems: [], virtual: true };
+    const base = o.items.length ? o.items : (o.virtual ? [] : ['租金']);
+    o.items = [...base.filter(l => !its.includes(l)), ...its];
+    if (!o.virtual && !o.baseItems.length) o.baseItems = [];
+  }
+}
+function tagSheet(o) {
+  const cur = new Set(((S.tags[o.key] || {}).items) || []);
+  openSheet(`<h3>🏷 這一戶的其他項目</h3><div class="hint">${who(o)}</div>
+    <p class="hint">勾起來的項目會一直留著（下個月放新的合併表也在），處理完再取消勾選就好。紀錄不會寫進公司的表，只記在工作日誌裡。</p>
+    <div class="opts" id="tgOpts">${S.customItems.map(x => `<button data-tg="${esc(x)}" class="${cur.has(x) ? 'sel' : ''}">${cur.has(x) ? '✓ ' : ''}${esc(x)}</button>`).join('')}</div>
+    <div class="row"><button class="small" id="tgEdit">✎ 增減項目種類</button><span class="grow"></span><button onclick="closeSheet()">取消</button><button class="primary" id="tgSave">儲存</button></div>`);
+  $('tgOpts').querySelectorAll('[data-tg]').forEach(b => b.onclick = () => { const x = b.dataset.tg; cur.has(x) ? cur.delete(x) : cur.add(x); b.classList.toggle('sel', cur.has(x)); b.textContent = (cur.has(x) ? '✓ ' : '') + x; });
+  $('tgEdit').onclick = customItemsSheet;
+  $('tgSave').onclick = () => {
+    if (cur.size) S.tags[o.key] = { items: [...cur], addr: o.addr, tenant: o.tenant, phones: o.phones, base: o.base };
+    else delete S.tags[o.key];
+    applyTags(); touchCfg(); closeSheet(); render(); toast(cur.size ? `已標記：${[...cur].join('、')}` : '已取消標記');
+  };
+}
+function customItemsSheet() {
+  openSheet(`<h3>🏷 自己維護的項目種類</h3><p class="hint">一行一個，例如：延遲金。這些項目由他自己勾選哪幾戶有，不會寫進公司的表。</p>
+    <textarea id="ciIn" rows="4">${esc(S.customItems.join('\n'))}</textarea>
+    <div class="row" style="margin-top:10px"><span class="grow"></span><button onclick="closeSheet()">取消</button><button class="primary" id="ciSave">儲存</button></div>`);
+  $('ciSave').onclick = () => { S.customItems = [...new Set($('ciIn').value.split('\n').map(s => s.trim()).filter(Boolean))]; applyTags(); touchCfg(); closeSheet(); render(); toast('已儲存'); };
 }
 
 /* ============ 卡片顯示的欄位 ============ */
@@ -497,7 +539,7 @@ function render() {
   }
   const qs = query.normalize('NFKC').toLowerCase().split(/\s+/).filter(Boolean);
   const match = o => !qs.length || qs.every(q => (o.addr + ' ' + o.tenant + ' ' + o.phones.join(' ') + ' ' + shownCols().map(h => (o.extra || {})[h] ?? '').join(' ')).normalize('NFKC').toLowerCase().replace(/-/g, '').includes(q.replace(/-/g, '')));
-  const owe = all.filter(o => o.amount > 0);
+  const owe = all.filter(owes);
   const doneN = owe.filter(o => delivered(o.key)).length;
   $('stat').textContent = `有欠款 ${owe.length} 戶｜已${P.name} ${doneN}｜還沒 ${owe.length - doneN}`;
   const types = itemTypes();
@@ -505,10 +547,11 @@ function render() {
   $('itemChips').innerHTML = types.length > 1 ? ['', ...types].map(x => `<button class="chip ${x === itemFilter ? 'on' : ''}" data-ty="${esc(x)}">${x ? esc(x) : '全部項目'}</button>`).join('') : '';
   $('itemChips').querySelectorAll('[data-ty]').forEach(c => c.onclick = () => { itemFilter = c.dataset.ty; render(); });
   const byItem = o => !itemFilter || (o.items || []).some(l => itemType(l) === itemFilter);
-  const shown = all.filter(byItem).filter(o => filter === 'all' ? true : o.amount > 0 && (filter === 'done' ? delivered(o.key) : (!delivered(o.key) || justDone.has(o.key)))).filter(match);
+  const shown = all.filter(byItem).filter(o => filter === 'all' ? true : owes(o) && (filter === 'done' ? delivered(o.key) : (!delivered(o.key) || justDone.has(o.key)))).filter(match);
   list.innerHTML = shown.length ? shown.map(cardHTML).join('') : `<div class="empty" style="grid-column:1/-1">${qs.length ? '找不到符合的' : filter === 'todo' ? '🎉 都處理完了' : '沒有資料'}</div>`;
   list.querySelectorAll('[data-act]').forEach(b => b.onclick = () => act(b.dataset.act, b.dataset.key));
   list.querySelectorAll('[data-del]').forEach(x => x.onclick = () => delEvent(x.dataset.del));
+  list.querySelectorAll('[data-tagk]').forEach(x => x.onclick = () => tagSheet(S.roster[x.dataset.tagk]));
   list.querySelectorAll('[data-ph]').forEach(x => x.onclick = ev => { ev.preventDefault(); showPhoto(x.dataset.ph); });
   renderLog();
 }
@@ -518,7 +561,7 @@ function badge(e) {
 }
 // 每個項目：最後完成的動作＋各動作累計次數（例如 簡訊 2、電話 1）
 function itemStatusHTML(o, l) {
-  const evs = evsForItem(o.key, l).filter(e => inRound(e));
+  const evs = evsForItem(o.key, l).filter(e => inRoundFor(e, l));
   const last = evs.find(e => !isFail(e));
   const cnt = {}; for (const e of evs) cnt[e.kind] = (cnt[e.kind] || 0) + 1;
   const counts = Object.entries(cnt).map(([k, n]) => `${esc(A(k).name)} ${n}`).join('、');
@@ -540,7 +583,8 @@ function cardHTML(o) {
       ${canDo(smsA, o) ? `<button data-act="sms" data-key="${esc(o.key)}" ${mob ? '' : 'disabled title="沒有手機號碼"'}>💬 簡訊</button>` : '<span></span>'}
       ${canDo(callA, o) ? `<button data-act="call" data-key="${esc(o.key)}" ${o.phones.length ? '' : 'disabled'}>📞 電話</button>` : '<span></span>'}
     </div>
-    <div class="row" style="gap:6px">${others.map(a => `<button class="small" data-act="${a.id}" data-key="${esc(o.key)}">${esc(a.icon)} ${esc(a.name)}</button>`).join('')}</div>
+    <div class="row" style="gap:6px">${others.map(a => `<button class="small" data-act="${a.id}" data-key="${esc(o.key)}">${esc(a.icon)} ${esc(a.name)}</button>`).join('')}<button class="small" data-tagk="${esc(o.key)}">🏷 ${S.customItems.length === 1 ? esc(S.customItems[0]) : '其他項目'}</button></div>
+    ${o.virtual ? '<div class="hint">（這個月的合併表沒有這一戶，是自己標的項目）</div>' : ''}
     ${evs.length ? `<details><summary class="more">紀錄 ${evs.length} 筆</summary><div class="hist">${evs.map(e => `<div>${fmtTime(e.ts)}　${esc(A(e.kind).name)}${(e.items || []).length && its.length > 1 ? `（${esc(e.items.join('、'))}）` : ''}${e.how ? '：' + esc(e.how) : ''}${e.note ? '　' + esc(e.note) : ''}${e.hasPhoto ? ` <a href="#" data-ph="${e.id}">📷</a>` : ''}<span class="x" data-del="${e.id}" title="刪除這筆">✕</span></div>`).join('')}</div></details>` : ''}
   </div>`;
 }
@@ -660,7 +704,7 @@ function fillTmpl(text, o, units, opt) {
 let pending = null;
 function smsSheet(o) {
   const mob = mobileOf(o.phones.join(' '));
-  const siblings = Object.values(S.roster).filter(x => x.key !== o.key && x.amount > 0 && mobileOf(x.phones.join(' ')) === mob);
+  const siblings = Object.values(S.roster).filter(x => x.key !== o.key && owes(x) && mobileOf(x.phones.join(' ')) === mob);
   const st = { tmpl: S.templates.find(t => t.id === S.lastTmpl) || S.templates[0], sal: salOf(o), with: new Set(), owed: '', edited: false, custom: false };
   const pickI = itemPicker(o, () => { if (!st.custom) st.owed = owedOf(units(), picked()); regen(); }, A('sms'));
   const picked = () => { const m = {}; units().forEach(u => m[u.key] = u === o ? pickI.get() : (u.items || [])); return m; };
@@ -766,6 +810,7 @@ async function buildMaster() {
     const w = noteLine(e); if (!w || !(e.key in rowOf) || h.map[w.col] == null) continue;
     // 寫到這次處理的那幾個項目各自的那一列；沒指定就寫在這戶的第一列
     const m = rowOf[e.key], rows = [...new Set((e.items || []).map(l => m[l]).filter(x => x != null))];
+    if (!rows.length && (e.items || []).length && e.items.every(l => S.customItems.includes(itemType(l)))) continue; // 自己加的項目（例如延遲金）不寫進公司的表
     for (const r of rows.length ? rows : [m._first]) {
       const id = r + '|' + h.map[w.col];
       (want[id] = want[id] || { r, c: h.map[w.col], lines: [] }).lines.push(w.text);
@@ -819,7 +864,7 @@ async function exportMaster() {
 const OUR_SHEETS = ['_送信紀錄', '_送信設定'];
 function dataSheets() {
   const evs = S.events.slice().sort((a, b) => a.ts - b.ts);
-  const conf = { actions: S.actions, primary: S.primary, templates: S.templates, sal: S.sal, show: S.show, cfgAt: S.cfgAt };
+  const conf = { actions: S.actions, primary: S.primary, templates: S.templates, sal: S.sal, show: S.show, tags: S.tags, customItems: S.customItems, cfgAt: S.cfgAt };
   return [
     { name: '_送信紀錄', rows: [['時間', '物件地址', '承租人', '動作', '結果', '備註', '寫回主表', '照片', '裝置', '已刪除', '紀錄編號', '時間戳', '修改戳', '動作代號', '項目'],
       ...evs.map(e => { const o = S.roster[e.key] || {}, w = noteLine(e); return [fmtTime(e.ts), o.addr || e.key, o.tenant || '', A(e.kind).name, e.how, e.note, w ? `${w.col}：${w.text}` : '', e.hasPhoto ? '有' : '', e.device, e.deleted ? '是' : '', e.id, String(e.ts), String(e.mt || e.ts), e.kind, (e.items || []).join('、')]; })] },
@@ -885,11 +930,11 @@ async function exportFile(asLog) {
     }
   }
   const all = Object.values(S.roster).sort((a, b) => collator.compare(shortAddr(a.addr), shortAddr(b.addr)));
-  const status = o => { const d = delivered(o.key); return d ? `已${primaryA().name} ${fmtMD(new Date(d.ts))}（${d.how}）` : o.amount > 0 ? `還沒${primaryA().name}` : ''; };
+  const status = o => { const d = delivered(o.key); return d ? `已${primaryA().name} ${fmtMD(new Date(d.ts))}（${d.how}）` : owes(o) ? `還沒${primaryA().name}` : ''; };
   const evs = S.events.slice().sort((a, b) => a.ts - b.ts);
   const cols = S.cols && S.cols.length ? S.cols : ['承租人', '連絡電話', '合計', '逾期天數', '基地'];
   const nC = cols.length;
-  const conf = { actions: S.actions, primary: S.primary, templates: S.templates, sal: S.sal, show: S.show, cfgAt: S.cfgAt };
+  const conf = { actions: S.actions, primary: S.primary, templates: S.templates, sal: S.sal, show: S.show, tags: S.tags, customItems: S.customItems, cfgAt: S.cfgAt };
   const sheets = [
     { name: '名單', widths: [34, ...cols.map(h => Math.min(30, Math.max(8, h.length * 2 + 2))), 22, 8, 8, 8, 8, 8], hidden: [nC + 2, nC + 3, nC + 4, nC + 5, nC + 6],
       rows: [['物件地址', ...cols, '這一輪狀態', '_承租人', '_電話', '_欠款', '_逾期', '_基地'], ...all.map(o => [o.addr, ...cols.map(h => o.extra && o.extra[h] != null ? o.extra[h] : (h === '承租人' ? o.tenant : h === '連絡電話' ? o.phones.join('\n') : h === '合計' ? o.amount : '')), status(o), o.tenant, o.phones.join('\n'), o.amount || 0, o.overdue ?? '', o.base])] },
@@ -989,6 +1034,7 @@ $('bMenu').onclick = () => openSheet(`<h3>設定</h3>
   <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
     <button id="mTmpl">💬 簡訊範本</button>
     <button id="mAct">⚙ 動作與寫回主表的欄位</button>
+    <button id="mCustom">🏷 自己維護的項目（例如延遲金）</button>
     <button id="mCols">🧩 卡片要顯示哪些欄位</button>
     <button id="mMaster" ${S.srcName ? '' : 'disabled'}>📥 下載主表（紀錄寫回原本的欄位）</button>
     <button id="mHelp">❓ 怎麼用</button>
@@ -999,6 +1045,7 @@ function bindMenu() {
   $('mTmpl').onclick = tmplListSheet;
   $('mAct').onclick = actListSheet;
   $('mCols').onclick = colsSheet;
+  $('mCustom').onclick = customItemsSheet;
   $('mMaster').onclick = () => { closeSheet(); exportMaster(); };
   $('mHelp').onclick = () => openSheet(`<h3>❓ 怎麼用</h3>
     <ol style="line-height:1.9;padding-left:20px;margin:10px 0">
@@ -1029,7 +1076,7 @@ function bindMenu() {
       for (const d of DEFAULT_ACTIONS) if (!S.actions.find(a => a.id === d.id) && ['reply', 'visit'].includes(d.id) && !s.actions) S.actions.push(clone(d));
     }
   } catch (e) {}
-  render();
+  applyTags(); render();
 })();
 </script>
 <script>if (location.protocol.startsWith("http") && "serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});</script>
