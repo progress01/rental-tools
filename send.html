@@ -51,6 +51,8 @@
   .badge.sms{background:#e3ecfb;color:#24508f}
   .badge.call{background:#f1e8fb;color:#5a3d8a}
   .badge.fail{background:var(--danger-soft);color:var(--danger)}
+  .items{display:flex;flex-direction:column;gap:4px;font-size:14px}
+  .items .it{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
   .acts{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:6px}
   .acts button{padding:10px 6px;font-size:15px}
   .more{font-size:13px;color:var(--accent);background:none;border:0;padding:0;cursor:pointer;align-self:flex-start}
@@ -301,7 +303,14 @@ const primaryA = () => A(S.primary);
 const isFail = e => A(e.kind).fails.includes(e.how);
 const liveEvents = () => S.events.filter(e => !e.deleted);
 const evOf = key => liveEvents().filter(e => e.key === key).sort((a, b) => b.ts - a.ts);
-function delivered(key) { return evOf(key).find(e => e.kind === S.primary && !isFail(e) && e.ts >= S.rosterAt); }
+// 這一輪是否「已處理」：主要動作適用的每個項目，都至少成功做過一次
+function delivered(key) {
+  const o = S.roster[key], ok = l => evsForItem(key, l).find(e => e.kind === S.primary && !isFail(e) && inRound(e));
+  const its = ((o && o.items) || []).filter(l => applicable(primaryA(), l));
+  return its.length ? (its.every(ok) ? ok(its[0]) : null) : evOf(key).find(e => e.kind === S.primary && !isFail(e) && inRound(e));
+}
+// 這一輪的紀錄：放入名單之後才登記的（補登以前日期的也算）
+const inRound = e => Math.max(e.ts || 0, e.mt || 0) >= S.rosterAt;
 const unsynced = () => S.events.filter(e => (e.mt || e.ts) > S.lastExport).length;
 function addEvent(key, kind, how, note, hasPhoto, extra) {
   const e = Object.assign({ id: uid(), key, kind, how: how || '', note: note || '', ts: Date.now(), mt: Date.now(), device: DEVICE, hasPhoto: !!hasPhoto }, extra || {});
@@ -416,11 +425,17 @@ const itemLabel = g => str(g('項目') ?? g('項目名稱') ?? '');
 const itemType = l => str(l).replace(/\s*#\s*\d+$/, '').trim();
 let itemFilter = '';
 const itemTypes = () => [...new Set(Object.values(S.roster).flatMap(o => (o.items || []).map(itemType)))].filter(Boolean);
+// 動作適用哪些項目（沒設定＝全部）
+const applicable = (a, l) => !a.items || !a.items.length || !l || a.items.includes(itemType(l));
+const canDo = (a, o) => !(o.items || []).length || o.items.some(l => applicable(a, l));
+// 這個項目的紀錄（沒指定項目的紀錄算整戶）
+const evsForItem = (key, l) => evOf(key).filter(e => !e.items || !e.items.length || e.items.includes(l));
 const defaultItems = o => { const its = o.items || []; const f = itemFilter ? its.filter(l => itemType(l) === itemFilter) : its; return f.length ? f : its; };
 // 登記時勾選這次處理的是哪幾個項目（只有一項就不顯示）
-function itemPicker(o, onChange) {
-  const its = o.items || [];
-  const sel = new Set(defaultItems(o));
+function itemPicker(o, onChange, a) {
+  const its = (o.items || []).filter(l => !a || applicable(a, l));
+  const sel = new Set(defaultItems(o).filter(l => its.includes(l)));
+  if (!sel.size) its.forEach(l => sel.add(l));
   const id = 'ip' + uid();
   return {
     html: its.length > 1 ? `<div class="hint" style="margin-top:10px">這次處理哪幾項？</div><div class="chips" id="${id}">${its.map(l => `<button class="chip ${sel.has(l) ? 'on' : ''}" data-it="${esc(l)}">${esc(l)}</button>`).join('')}</div>` : '',
@@ -501,22 +516,32 @@ function badge(e) {
   const a = A(e.kind), cls = isFail(e) ? 'fail' : a.type === 'sms' ? 'sms' : a.type === 'call' ? 'call' : e.kind === S.primary ? 'deliver' : '';
   return `<span class="badge ${cls}">${fmtMD(new Date(e.ts))} ${esc(a.name)}${e.how ? '：' + esc(e.how) : ''}</span>`;
 }
+// 每個項目：最後完成的動作＋各動作累計次數（例如 簡訊 2、電話 1）
+function itemStatusHTML(o, l) {
+  const evs = evsForItem(o.key, l).filter(e => inRound(e));
+  const last = evs.find(e => !isFail(e));
+  const cnt = {}; for (const e of evs) cnt[e.kind] = (cnt[e.kind] || 0) + 1;
+  const counts = Object.entries(cnt).map(([k, n]) => `${esc(A(k).name)} ${n}`).join('、');
+  return `<div class="it"><span class="badge" style="background:#fff3d6;color:#7a4b00">${esc(l)}</span>${last ? `<span>最後：${fmtMD(new Date(last.ts))} ${esc(A(last.kind).name)}${last.how ? '（' + esc(last.how) + '）' : ''}</span>` : '<span class="hint">還沒處理</span>'}${counts ? `<span class="hint">｜${counts}</span>` : ''}</div>`;
+}
 function cardHTML(o) {
   const evs = evOf(o.key), done = delivered(o.key), mob = mobileOf(o.phones.join(' ')), P = primaryA();
-  const seen = new Set(), badges = evs.filter(e => !seen.has(e.kind) && seen.add(e.kind)).slice(0, 4).map(badge).join('');
-  const others = S.actions.filter(a => a.id !== P.id && a.type !== 'sms' && a.type !== 'call');
+  const its = (o.items || []).filter(Boolean);
+  const seen = new Set(), badges = its.length ? '' : evs.filter(e => !seen.has(e.kind) && seen.add(e.kind)).slice(0, 4).map(badge).join('');
+  const others = S.actions.filter(a => a.id !== P.id && a.type !== 'sms' && a.type !== 'call' && canDo(a, o));
+  const smsA = A('sms'), callA = A('call');
   return `<div class="card ${done ? 'done' : ''}">
     <div class="addr">${esc(shortAddr(o.addr))}</div>
     <div class="meta">${metaHTML(o)}</div>
-    ${(o.items || []).filter(Boolean).length ? `<div class="badges">${o.items.map(l => `<span class="badge" style="background:#fff3d6;color:#7a4b00">${esc(l)}</span>`).join('')}</div>` : ''}
+    ${its.length ? `<div class="items">${its.map(l => itemStatusHTML(o, l)).join('')}</div>` : ''}
     ${badges ? `<div class="badges">${badges}</div>` : ''}
     <div class="acts">
-      <button class="${done ? '' : 'ok'}" data-act="${P.id}" data-key="${esc(o.key)}">${esc(P.icon)} ${done ? '再記一次' : esc(P.name)}</button>
-      <button data-act="sms" data-key="${esc(o.key)}" ${mob ? '' : 'disabled title="沒有手機號碼"'}>💬 簡訊</button>
-      <button data-act="call" data-key="${esc(o.key)}" ${o.phones.length ? '' : 'disabled'}>📞 電話</button>
+      ${canDo(P, o) ? `<button class="${done ? '' : 'ok'}" data-act="${P.id}" data-key="${esc(o.key)}">${esc(P.icon)} ${done ? '再記一次' : esc(P.name)}</button>` : '<span></span>'}
+      ${canDo(smsA, o) ? `<button data-act="sms" data-key="${esc(o.key)}" ${mob ? '' : 'disabled title="沒有手機號碼"'}>💬 簡訊</button>` : '<span></span>'}
+      ${canDo(callA, o) ? `<button data-act="call" data-key="${esc(o.key)}" ${o.phones.length ? '' : 'disabled'}>📞 電話</button>` : '<span></span>'}
     </div>
     <div class="row" style="gap:6px">${others.map(a => `<button class="small" data-act="${a.id}" data-key="${esc(o.key)}">${esc(a.icon)} ${esc(a.name)}</button>`).join('')}</div>
-    ${evs.length ? `<details><summary class="more">紀錄 ${evs.length} 筆</summary><div class="hist">${evs.map(e => `<div>${fmtTime(e.ts)}　${esc(A(e.kind).name)}${e.how ? '：' + esc(e.how) : ''}${e.note ? '　' + esc(e.note) : ''}${e.hasPhoto ? ` <a href="#" data-ph="${e.id}">📷</a>` : ''}<span class="x" data-del="${e.id}" title="刪除這筆">✕</span></div>`).join('')}</div></details>` : ''}
+    ${evs.length ? `<details><summary class="more">紀錄 ${evs.length} 筆</summary><div class="hist">${evs.map(e => `<div>${fmtTime(e.ts)}　${esc(A(e.kind).name)}${(e.items || []).length && its.length > 1 ? `（${esc(e.items.join('、'))}）` : ''}${e.how ? '：' + esc(e.how) : ''}${e.note ? '　' + esc(e.note) : ''}${e.hasPhoto ? ` <a href="#" data-ph="${e.id}">📷</a>` : ''}<span class="x" data-del="${e.id}" title="刪除這筆">✕</span></div>`).join('')}</div></details>` : ''}
   </div>`;
 }
 document.querySelectorAll('#chips .chip').forEach(c => c.onclick = () => { filter = c.dataset.f; justDone.clear(); document.querySelectorAll('#chips .chip').forEach(x => x.classList.toggle('on', x === c)); render(); });
@@ -572,7 +597,7 @@ function act(kind, key) {
   if (a.type === 'sms') return smsSheet(o);
   if (a.type === 'call') return callStart(o);
   let how = '', photo = null;
-  const opts = [...a.results, ...a.fails], pickI = itemPicker(o);
+  const opts = [...a.results, ...a.fails], pickI = itemPicker(o, null, a);
   openSheet(`<h3>${esc(a.icon)} ${esc(a.name)}</h3><div class="hint">${who(o)}</div>${pickI.html}
     ${opts.length ? `<div class="opts">${opts.map(x => `<button data-how="${esc(x)}">${esc(x)}</button>`).join('')}</div>` : ''}
     ${quickHTML(a)}
@@ -637,7 +662,7 @@ function smsSheet(o) {
   const mob = mobileOf(o.phones.join(' '));
   const siblings = Object.values(S.roster).filter(x => x.key !== o.key && x.amount > 0 && mobileOf(x.phones.join(' ')) === mob);
   const st = { tmpl: S.templates.find(t => t.id === S.lastTmpl) || S.templates[0], sal: salOf(o), with: new Set(), owed: '', edited: false, custom: false };
-  const pickI = itemPicker(o, () => { if (!st.custom) st.owed = owedOf(units(), picked()); regen(); });
+  const pickI = itemPicker(o, () => { if (!st.custom) st.owed = owedOf(units(), picked()); regen(); }, A('sms'));
   const picked = () => { const m = {}; units().forEach(u => m[u.key] = u === o ? pickI.get() : (u.items || [])); return m; };
   const units = () => [o, ...siblings.filter(x => st.with.has(x.key))];
   st.owed = owedOf([o], { [o.key]: pickI.get() });
@@ -685,7 +710,7 @@ function smsSheet(o) {
 }
 function callStart(o) {
   const mob = mobileOf(o.phones.join(' ')) || str(o.phones[0]).replace(/[^\d#*+]/g, '');
-  pending = { kind: 'call', keys: [o.key], items: { [o.key]: defaultItems(o) }, at: Date.now() };
+  pending = { kind: 'call', keys: [o.key], items: { [o.key]: defaultItems(o).filter(l => applicable(A('call'), l)) }, at: Date.now() };
   location.href = `tel:${mob}`;
   if (!IS_PHONE) setTimeout(askPending, 600);
 }
@@ -737,7 +762,7 @@ async function buildMaster() {
   }
   // 要寫的內容：這一輪的紀錄，依欄位分好
   const want = {};
-  for (const e of liveEvents().filter(e => e.ts >= S.rosterAt).sort((a, b) => a.ts - b.ts)) {
+  for (const e of liveEvents().filter(e => inRound(e)).sort((a, b) => a.ts - b.ts)) {
     const w = noteLine(e); if (!w || !(e.key in rowOf) || h.map[w.col] == null) continue;
     // 寫到這次處理的那幾個項目各自的那一列；沒指定就寫在這戶的第一列
     const m = rowOf[e.key], rows = [...new Set((e.items || []).map(l => m[l]).filter(x => x != null))];
@@ -937,15 +962,17 @@ function actEditSheet(a) {
     <div class="hint" style="margin-top:10px">寫成什麼字（{日期}＝10/29、{結果}＝選的選項、{備註}＝補充說明；{，備註}、{（備註）}＝有補充說明時才加上）</div>
     <input type="text" id="aFmt" value="${esc(a.fmt)}">
     ${a.type === 'note' ? '' : `<label class="row" style="margin-top:8px"><input type="checkbox" id="aWF" ${a.writeFails ? 'checked' : ''}> 「沒成功」的也寫回主表（例如 10/5電話未接）</label>`}
+    ${itemTypes().length ? `<div class="hint" style="margin-top:10px">適用哪些項目（都不選＝全部項目都能用）</div><div class="chips" id="aItems">${itemTypes().map(x => `<button class="chip ${(a.items || []).includes(x) ? 'on' : ''}" data-ai="${esc(x)}">${esc(x)}</button>`).join('')}</div>` : ''}
     <label class="row" style="margin-top:6px"><input type="checkbox" id="aPri" ${a.id === S.primary ? 'checked' : ''} ${a.type !== 'generic' ? 'disabled' : ''}> 設為主要動作（卡片上的大按鈕，用來算「已處理／還沒處理」）</label>
     <div class="smsprev" id="aPrev"></div>
     <div class="row">${isNew || ['sms', 'call', 'note'].includes(a.type) ? '' : '<button class="danger small" id="aDel">刪除這個動作</button>'}<span class="grow"></span><button id="aBack">返回</button><button class="primary" id="aSave">儲存</button></div>`);
   const read = () => {
     const lines = $('aOpts') ? $('aOpts').value.split('\n').map(s => s.trim()).filter(Boolean) : [];
-    return { name: $('aName').value.trim(), icon: $('aIcon').value.trim() || '📌', results: lines.filter(s => !/^[✗xX]/.test(s)), fails: lines.filter(s => /^[✗xX]/.test(s)).map(s => s.replace(/^[✗xX]\s*/, '')), col: $('aCol').value ? [$('aCol').value] : [], fmt: $('aFmt').value, writeFails: $('aWF') ? $('aWF').checked : true, quick: $('aQuick') ? $('aQuick').value.split('\n').map(s => s.trim()).filter(Boolean) : [] };
+    return { name: $('aName').value.trim(), icon: $('aIcon').value.trim() || '📌', results: lines.filter(s => !/^[✗xX]/.test(s)), fails: lines.filter(s => /^[✗xX]/.test(s)).map(s => s.replace(/^[✗xX]\s*/, '')), col: $('aCol').value ? [$('aCol').value] : [], fmt: $('aFmt').value, writeFails: $('aWF') ? $('aWF').checked : true, quick: $('aQuick') ? $('aQuick').value.split('\n').map(s => s.trim()).filter(Boolean) : [], items: $('aItems') ? [...$('aItems').querySelectorAll('.on')].map(b => b.dataset.ai) : (a.items || []) };
   };
   const prev = () => { const r = read(), keep = S.actions; const tmp = Object.assign({}, a, r); S.actions = [...S.actions.filter(x => x.id !== a.id), tmp]; const w = noteLine({ kind: a.id, how: r.results[0] || r.fails[0] || '', note: '補充說明', ts: Date.now() }); S.actions = keep; $('aPrev').textContent = w ? `例：寫回「${w.col}」→ ${w.text}` : '例：不寫回主表'; };
   $('sheetBox').querySelectorAll('input,textarea,select').forEach(el => el.addEventListener('input', prev)); prev();
+  if ($('aItems')) $('aItems').querySelectorAll('[data-ai]').forEach(c => c.onclick = () => c.classList.toggle('on'));
   $('aBack').onclick = actListSheet;
   if ($('aDel')) $('aDel').onclick = () => { if (a.id === S.primary) return toast('主要動作不能刪，先把別的設為主要'); if (!confirm(`刪除「${a.name}」？已記錄的紀錄會保留。`)) return; S.actions = S.actions.filter(x => x.id !== a.id); touchCfg(); render(); actListSheet(); };
   $('aSave').onclick = () => {
