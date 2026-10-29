@@ -111,6 +111,9 @@
       <span class="grow"></span>
       <span class="stat" id="stat"></span>
     </div>
+    <div class="tools">
+      <div class="chips" id="itemChips"></div>
+    </div>
     <div class="list" id="list"></div>
   </div>
   <div id="viewLog" class="hidden">
@@ -320,10 +323,11 @@ function parseRoster(sheets) {
     const g = n => map[n] == null ? null : row[map[n]];
     let addr = str(g('物件地址'));
     // 合併表裡同一戶的第二列沒有地址，接在上一戶
-    if (!addr && lastKey && (str(g('連絡電話')) || str(g('承租人')))) addr = roster[lastKey].addr;
+    if (!addr && lastKey && (str(g('連絡電話')) || str(g('承租人')) || itemLabel(g))) addr = roster[lastKey].addr;
     if (!addr) continue;
     const key = addrKey(addr);
-    const o = roster[key] || (roster[key] = { key, addr, tenant: '', phones: [], amount: 0, overdue: null, base: '', extra: {} });
+    const o = roster[key] || (roster[key] = { key, addr, tenant: '', phones: [], amount: 0, overdue: null, base: '', extra: {}, items: [] });
+    const lab = itemLabel(g); if (lab && !o.items.includes(lab)) o.items.push(lab);
     for (const h of cols) {
       let v = g(h); if (v == null || v === '') continue;
       if (isDate(v)) v = fmtMD(v);
@@ -365,7 +369,7 @@ function parseTransfer(sheets) {
     if (!row) continue; const g = n => E[n] == null ? null : row[E[n]];
     const id = str(g('紀錄編號')); if (!id) continue;
     const kindName = str(g('動作')), kind = str(g('動作代號')) || (acts.find(a => a.name === kindName) || {}).id || 'note';
-    events.push({ id, key: addrKey(g('物件地址')), kind, how: str(g('結果')), note: str(g('備註')), ts: +str(g('時間戳')) || Date.parse(str(g('時間')).replace(/\//g, '-')) || Date.now(), mt: +str(g('修改戳')) || 0, device: str(g('裝置')), hasPhoto: str(g('照片')) !== '', deleted: str(g('已刪除')) === '是' });
+    events.push({ id, key: addrKey(g('物件地址')), kind, how: str(g('結果')), note: str(g('備註')), ts: +str(g('時間戳')) || Date.parse(str(g('時間')).replace(/\//g, '-')) || Date.now(), mt: +str(g('修改戳')) || 0, device: str(g('裝置')), hasPhoto: str(g('照片')) !== '', deleted: str(g('已刪除')) === '是', items: str(g('項目')) ? str(g('項目')).split('、') : [] });
   }
   return { roster, events, cols, conf, title: str(C['名單']), rosterAt: +str(C['名單時間戳']) || 0 };
 }
@@ -406,6 +410,24 @@ async function loadFile(file) {
 $('fileIn').onchange = () => { const f = $('fileIn').files[0]; $('fileIn').value = ''; if (f) loadFile(f); };
 window.addEventListener('dragover', e => e.preventDefault());
 window.addEventListener('drop', e => { e.preventDefault(); const f = [...e.dataTransfer.files].find(f => /\.xlsx?m?$/i.test(f.name)); if (f) loadFile(f); });
+
+/* ============ 項目（租金、房屋管理費、延遲金…） ============ */
+const itemLabel = g => str(g('項目') ?? g('項目名稱') ?? '');
+const itemType = l => str(l).replace(/\s*#\s*\d+$/, '').trim();
+let itemFilter = '';
+const itemTypes = () => [...new Set(Object.values(S.roster).flatMap(o => (o.items || []).map(itemType)))].filter(Boolean);
+const defaultItems = o => { const its = o.items || []; const f = itemFilter ? its.filter(l => itemType(l) === itemFilter) : its; return f.length ? f : its; };
+// 登記時勾選這次處理的是哪幾個項目（只有一項就不顯示）
+function itemPicker(o, onChange) {
+  const its = o.items || [];
+  const sel = new Set(defaultItems(o));
+  const id = 'ip' + uid();
+  return {
+    html: its.length > 1 ? `<div class="hint" style="margin-top:10px">這次處理哪幾項？</div><div class="chips" id="${id}">${its.map(l => `<button class="chip ${sel.has(l) ? 'on' : ''}" data-it="${esc(l)}">${esc(l)}</button>`).join('')}</div>` : '',
+    bind() { const box = $(id); if (!box) return; box.querySelectorAll('[data-it]').forEach(b => b.onclick = () => { const l = b.dataset.it; if (sel.has(l) && sel.size > 1) sel.delete(l); else sel.add(l); box.querySelectorAll('[data-it]').forEach(x => x.classList.toggle('on', sel.has(x.dataset.it))); onChange && onChange(); }); },
+    get: () => its.filter(l => sel.has(l))
+  };
+}
 
 /* ============ 卡片顯示的欄位 ============ */
 const isMoneyCol = h => /合計|小計|金額|租金|欠|費|款/.test(h) && !/日|名目|月份|方式|通知|提醒|聯繫|催/.test(h);
@@ -463,7 +485,12 @@ function render() {
   const owe = all.filter(o => o.amount > 0);
   const doneN = owe.filter(o => delivered(o.key)).length;
   $('stat').textContent = `有欠款 ${owe.length} 戶｜已${P.name} ${doneN}｜還沒 ${owe.length - doneN}`;
-  const shown = all.filter(o => filter === 'all' ? true : o.amount > 0 && (filter === 'done' ? delivered(o.key) : (!delivered(o.key) || justDone.has(o.key)))).filter(match);
+  const types = itemTypes();
+  if (itemFilter && !types.includes(itemFilter)) itemFilter = '';
+  $('itemChips').innerHTML = types.length > 1 ? ['', ...types].map(x => `<button class="chip ${x === itemFilter ? 'on' : ''}" data-ty="${esc(x)}">${x ? esc(x) : '全部項目'}</button>`).join('') : '';
+  $('itemChips').querySelectorAll('[data-ty]').forEach(c => c.onclick = () => { itemFilter = c.dataset.ty; render(); });
+  const byItem = o => !itemFilter || (o.items || []).some(l => itemType(l) === itemFilter);
+  const shown = all.filter(byItem).filter(o => filter === 'all' ? true : o.amount > 0 && (filter === 'done' ? delivered(o.key) : (!delivered(o.key) || justDone.has(o.key)))).filter(match);
   list.innerHTML = shown.length ? shown.map(cardHTML).join('') : `<div class="empty" style="grid-column:1/-1">${qs.length ? '找不到符合的' : filter === 'todo' ? '🎉 都處理完了' : '沒有資料'}</div>`;
   list.querySelectorAll('[data-act]').forEach(b => b.onclick = () => act(b.dataset.act, b.dataset.key));
   list.querySelectorAll('[data-del]').forEach(x => x.onclick = () => delEvent(x.dataset.del));
@@ -481,6 +508,7 @@ function cardHTML(o) {
   return `<div class="card ${done ? 'done' : ''}">
     <div class="addr">${esc(shortAddr(o.addr))}</div>
     <div class="meta">${metaHTML(o)}</div>
+    ${(o.items || []).filter(Boolean).length ? `<div class="badges">${o.items.map(l => `<span class="badge" style="background:#fff3d6;color:#7a4b00">${esc(l)}</span>`).join('')}</div>` : ''}
     ${badges ? `<div class="badges">${badges}</div>` : ''}
     <div class="acts">
       <button class="${done ? '' : 'ok'}" data-act="${P.id}" data-key="${esc(o.key)}">${esc(P.icon)} ${done ? '再記一次' : esc(P.name)}</button>
@@ -501,7 +529,7 @@ function renderLog() {
   const evs = liveEvents().sort((a, b) => b.ts - a.ts);
   $('logStat').textContent = `共 ${evs.length} 筆紀錄`;
   $('logTable').innerHTML = `<tr><th>時間</th><th>地址</th><th>承租人</th><th>動作</th><th>結果</th><th>備註</th><th>寫回主表</th><th>裝置</th><th></th></tr>` +
-    (evs.map(e => { const o = S.roster[e.key] || {}, w = noteLine(e); return `<tr><td>${fmtTime(e.ts)}</td><td>${esc(shortAddr(o.addr || e.key))}</td><td>${esc(o.tenant || '')}</td><td>${esc(A(e.kind).name)}</td><td${isFail(e) ? ' style="color:var(--danger)"' : ''}>${esc(e.how)}</td><td>${esc(e.note)}${e.hasPhoto ? ` <a href="#" data-ph="${e.id}">📷</a>` : ''}</td><td class="hint">${w ? `${esc(w.col)}：${esc(w.text)}` : ''}</td><td>${esc(e.device)}</td><td><span class="x" style="color:var(--danger);cursor:pointer" data-del="${e.id}">✕</span></td></tr>`; }).join('') || '<tr><td colspan="9" class="hint">還沒有紀錄</td></tr>');
+    (evs.map(e => { const o = S.roster[e.key] || {}, w = noteLine(e); return `<tr><td>${fmtTime(e.ts)}</td><td>${esc(shortAddr(o.addr || e.key))}</td><td>${esc(o.tenant || '')}</td><td>${esc(A(e.kind).name)}${(e.items || []).length ? `<br><span class="hint">${esc(e.items.join('、'))}</span>` : ''}</td><td${isFail(e) ? ' style="color:var(--danger)"' : ''}>${esc(e.how)}</td><td>${esc(e.note)}${e.hasPhoto ? ` <a href="#" data-ph="${e.id}">📷</a>` : ''}</td><td class="hint">${w ? `${esc(w.col)}：${esc(w.text)}` : ''}</td><td>${esc(e.device)}</td><td><span class="x" style="color:var(--danger);cursor:pointer" data-del="${e.id}">✕</span></td></tr>`; }).join('') || '<tr><td colspan="9" class="hint">還沒有紀錄</td></tr>');
   $('logTable').querySelectorAll('[data-del]').forEach(x => x.onclick = () => delEvent(x.dataset.del));
   $('logTable').querySelectorAll('[data-ph]').forEach(x => x.onclick = ev => { ev.preventDefault(); showPhoto(x.dataset.ph); });
   $('bMaster').classList.toggle('hidden', !S.srcName);
@@ -544,8 +572,8 @@ function act(kind, key) {
   if (a.type === 'sms') return smsSheet(o);
   if (a.type === 'call') return callStart(o);
   let how = '', photo = null;
-  const opts = [...a.results, ...a.fails];
-  openSheet(`<h3>${esc(a.icon)} ${esc(a.name)}</h3><div class="hint">${who(o)}</div>
+  const opts = [...a.results, ...a.fails], pickI = itemPicker(o);
+  openSheet(`<h3>${esc(a.icon)} ${esc(a.name)}</h3><div class="hint">${who(o)}</div>${pickI.html}
     ${opts.length ? `<div class="opts">${opts.map(x => `<button data-how="${esc(x)}">${esc(x)}</button>`).join('')}</div>` : ''}
     ${quickHTML(a)}
     <textarea id="shNote" rows="${a.type === 'note' ? 3 : 2}" placeholder="${a.type === 'note' ? '要記什麼？例如：已繳9月租金' : '補充說明（可不填）'}。手機鍵盤上的🎤可以用講的" style="margin-top:${opts.length ? 0 : 12}px"></textarea>
@@ -557,7 +585,7 @@ function act(kind, key) {
     </div><img class="photo hidden" id="shImg">`);
   const tsOf = () => { const d = $('shDate').value; if (!d || d === todayISO()) return Date.now(); const [y, m, dd] = d.split('-').map(Number), n = new Date(); return new Date(y, m - 1, dd, n.getHours(), n.getMinutes()).getTime(); };
   const prev = () => { const w = noteLine({ kind, how, note: $('shNote').value.trim(), ts: tsOf() }); $('shPrev').textContent = w ? `會寫回主表「${w.col}」：${w.text}` : ''; };
-  $('shNote').oninput = prev; $('shDate').onchange = prev;
+  $('shNote').oninput = prev; $('shDate').onchange = prev; pickI.bind();
   $('sheetBox').querySelectorAll('[data-q]').forEach(b => b.onclick = () => { const ta = $('shNote'); ta.value = b.dataset.q; prev(); });
   $('sheetBox').querySelectorAll('[data-how]').forEach(b => b.onclick = () => { how = b.dataset.how; $('sheetBox').querySelectorAll('[data-how]').forEach(x => x.classList.toggle('sel', x === b)); $('shSave').disabled = false; prev(); });
   $('shPhoto').onchange = async () => { const f = $('shPhoto').files[0]; if (!f) return; try { photo = await shrinkPhoto(f); $('shImg').src = photo; $('shImg').classList.remove('hidden'); } catch (e) { toast(e.message); } };
@@ -565,7 +593,7 @@ function act(kind, key) {
     const note = $('shNote').value.trim();
     if (a.type === 'note' && !note && !photo) return toast('請寫點東西或拍張照');
     const ts = tsOf();
-    const e = addEvent(key, kind, how, note, !!photo, { ts, mt: Date.now() });
+    const e = addEvent(key, kind, how, note, !!photo, { ts, mt: Date.now(), items: pickI.get() });
     if (photo) await DB.set('photos', e.id, photo);
     closeSheet(); toast(`已記錄：${a.name}${how ? ' ' + how : ''}`);
   };
@@ -586,10 +614,14 @@ function salOptions(o) {
 function salOf(o) { const v = S.sal[o.key]; return v || salOptions(o)[0]; }
 const NUM = ['', '壹', '兩', '參', '肆', '伍', '陸', '柒', '捌', '玖', '拾'];
 const doorOf = a => shortAddr(a).replace(/^.*?(路|街|大道)(\d+段)?/, '');
-function owedOf(units) {
-  const txt = units.map(o => [o.extra && o.extra['項目'], o.extra && o.extra['欠繳名目']].join(' ')).join(' ');
-  const rent = /租金/.test(txt) || units.some(o => !o.extra || (!o.extra['項目'] && !o.extra['欠繳名目'])), mg = /管理費|清潔費/.test(txt);
-  return rent && mg ? '租金及管理費' : mg ? '管理費' : '租金';
+// 欠繳項目的說法：租金、管理費、延遲金…（依勾選的項目）
+function owedOf(units, picked) {
+  const labels = units.flatMap(u => picked && picked[u.key] ? picked[u.key] : (u.items || []));
+  if (!labels.length) return '租金';
+  const words = [...new Set(labels.map(itemType).map(x => /管理費|清潔費/.test(x) ? '管理費' : /租金/.test(x) ? '租金' : x))];
+  const order = ['租金', '管理費'];
+  words.sort((a, b) => (order.indexOf(a) + 1 || 9) - (order.indexOf(b) + 1 || 9));
+  return words.join('及');
 }
 function fillTmpl(text, o, units, opt) {
   const us = units && units.length ? units : [o];
@@ -604,14 +636,17 @@ let pending = null;
 function smsSheet(o) {
   const mob = mobileOf(o.phones.join(' '));
   const siblings = Object.values(S.roster).filter(x => x.key !== o.key && x.amount > 0 && mobileOf(x.phones.join(' ')) === mob);
-  const st = { tmpl: S.templates.find(t => t.id === S.lastTmpl) || S.templates[0], sal: salOf(o), with: new Set(), owed: '', edited: false };
-  st.owed = owedOf([o]);
+  const st = { tmpl: S.templates.find(t => t.id === S.lastTmpl) || S.templates[0], sal: salOf(o), with: new Set(), owed: '', edited: false, custom: false };
+  const pickI = itemPicker(o, () => { if (!st.custom) st.owed = owedOf(units(), picked()); regen(); });
+  const picked = () => { const m = {}; units().forEach(u => m[u.key] = u === o ? pickI.get() : (u.items || [])); return m; };
   const units = () => [o, ...siblings.filter(x => st.with.has(x.key))];
+  st.owed = owedOf([o], { [o.key]: pickI.get() });
   openSheet(`<h3>💬 傳簡訊</h3><div class="hint">${who(o)}｜${esc(mob)}</div>
+    ${pickI.html}
     <div class="hint" style="margin-top:10px">用哪個範本</div><div class="chips" id="smT">${S.templates.map(t => `<button class="chip" data-t="${t.id}">${esc(t.name)}</button>`).join('')}</div>
     <div class="hint" style="margin-top:10px">稱呼（會記住這一戶）</div><div class="chips" id="smS">${[...new Set([...salOptions(o), st.sal])].map(s => `<button class="chip" data-s="${esc(s)}">${esc(s)}</button>`).join('')}<button class="chip" data-s="__custom">✎ 自己打</button></div>
     ${siblings.length ? `<div class="hint" style="margin-top:10px">同一支電話的其他戶，要一起寫進這則嗎？</div><div class="chips" id="smW">${siblings.map(x => `<button class="chip" data-w="${esc(x.key)}">＋ ${esc(doorOf(x.addr))}</button>`).join('')}</div>` : ''}
-    <div class="hint" style="margin-top:10px">欠繳項目</div><div class="chips" id="smO">${['租金', '管理費', '租金及管理費'].map(x => `<button class="chip" data-o="${x}">${x}</button>`).join('')}<button class="chip" data-o="__custom">✎ 自己打（例：10月份租金）</button></div>
+    <div class="hint" style="margin-top:10px">簡訊裡的欠繳項目</div><div class="chips" id="smO"><button class="chip on" data-o="__auto" id="smAuto"></button><button class="chip" data-o="__custom">✎ 自己打（例：10月份租金）</button></div>
     <textarea id="smBody" rows="7" style="margin-top:12px;font-size:15px"></textarea>
     <div class="hint">上面的內容可以直接改（只改這一則）。範本要長期修改，按右上「⋯」→「簡訊範本」。</div>
     <div class="row" style="margin-top:12px"><span class="grow"></span><button onclick="closeSheet()">取消</button>
@@ -620,7 +655,9 @@ function smsSheet(o) {
   const regen = () => {
     $('smT').querySelectorAll('[data-t]').forEach(b => b.classList.toggle('on', b.dataset.t === st.tmpl.id));
     $('smS').querySelectorAll('[data-s]').forEach(b => b.classList.toggle('on', b.dataset.s === st.sal));
-    $('smO').querySelectorAll('[data-o]').forEach(b => b.classList.toggle('on', b.dataset.o === st.owed));
+    $('smAuto').textContent = st.custom ? '照勾選的項目' : `照勾選的項目：${st.owed}`; $('smAuto').classList.toggle('on', !st.custom);
+    $('smO').querySelector('[data-o="__custom"]').classList.toggle('on', st.custom);
+    $('smO').querySelector('[data-o="__custom"]').textContent = st.custom ? `✎ ${st.owed}` : '✎ 自己打（例：10月份租金）';
     if ($('smW')) $('smW').querySelectorAll('[data-w]').forEach(b => b.classList.toggle('on', st.with.has(b.dataset.w)));
     if (st.edited && !confirm('剛剛手動改過的內容會被換掉，確定嗎？')) return;
     st.edited = false;
@@ -634,21 +671,21 @@ function smsSheet(o) {
     st.sal = v; S.sal[o.key] = v; touchCfg(); regen();
   });
   $('smO').querySelectorAll('[data-o]').forEach(b => b.onclick = () => {
-    let v = b.dataset.o;
-    if (v === '__custom') { v = (prompt('欠繳項目怎麼寫？例如：10月份租金、8-10月份管理費', st.owed) || '').trim(); if (!v) return; }
-    st.owed = v; regen();
+    if (b.dataset.o === '__auto') { st.custom = false; st.owed = owedOf(units(), picked()); return regen(); }
+    const v = (prompt('欠繳項目怎麼寫？例如：10月份租金、8-10月份管理費', st.owed) || '').trim(); if (!v) return;
+    st.custom = true; st.owed = v; regen();
   });
-  if ($('smW')) $('smW').querySelectorAll('[data-w]').forEach(b => b.onclick = () => { st.with.has(b.dataset.w) ? st.with.delete(b.dataset.w) : st.with.add(b.dataset.w); st.owed = owedOf(units()); regen(); });
-  regen();
+  if ($('smW')) $('smW').querySelectorAll('[data-w]').forEach(b => b.onclick = () => { st.with.has(b.dataset.w) ? st.with.delete(b.dataset.w) : st.with.add(b.dataset.w); if (!st.custom) st.owed = owedOf(units(), picked()); regen(); });
+  pickI.bind(); regen();
   $('smsGo').onclick = () => {
     $('smsGo').href = `sms:${mob}${IS_IOS ? '&' : '?'}body=${encodeURIComponent($('smBody').value.trim())}`;
-    pending = { kind: 'sms', keys: units().map(u => u.key), at: Date.now(), note: st.tmpl.name }; closeSheet();
+    pending = { kind: 'sms', keys: units().map(u => u.key), items: picked(), at: Date.now(), note: st.tmpl.name }; closeSheet();
     if (!IS_PHONE) setTimeout(askPending, 600);
   };
 }
 function callStart(o) {
   const mob = mobileOf(o.phones.join(' ')) || str(o.phones[0]).replace(/[^\d#*+]/g, '');
-  pending = { kind: 'call', keys: [o.key], at: Date.now() };
+  pending = { kind: 'call', keys: [o.key], items: { [o.key]: defaultItems(o) }, at: Date.now() };
   location.href = `tel:${mob}`;
   if (!IS_PHONE) setTimeout(askPending, 600);
 }
@@ -662,7 +699,7 @@ function askPending() {
     <div class="row" style="margin-top:8px"><span class="grow"></span><button onclick="closeSheet()">不用記</button></div>`);
   $('sheetBox').querySelectorAll('[data-how]').forEach(b => b.onclick = () => {
     const note = $('cNote') ? $('cNote').value.trim() : (p.note || '');
-    p.keys.forEach(k => addEvent(k, p.kind, b.dataset.how, note));
+    p.keys.forEach(k => addEvent(k, p.kind, b.dataset.how, note, false, { items: (p.items && p.items[k]) || [] }));
     closeSheet(); toast(`已記錄：${a.name} ${b.dataset.how}`);
   });
 }
@@ -688,16 +725,26 @@ async function buildMaster() {
   if (!h) return alert('原檔讀不到「物件地址」欄位');
   // 每一戶在原檔的第幾列（合併表同一戶有兩列時，寫在第一列）
   const rowOf = {};
+  let lastK = null;
   for (let r = h.headerRow + 1; r < h.sheet.rows.length; r++) {
-    const a = str(((h.sheet.rows[r] || [])[h.map['物件地址']])); if (!a) continue;
-    const k = addrKey(a); if (!(k in rowOf)) rowOf[k] = r;
+    const row = h.sheet.rows[r] || [], g = n => h.map[n] == null ? null : row[h.map[n]];
+    let k = str(g('物件地址')) ? addrKey(g('物件地址')) : null;
+    if (!k && lastK && (str(g('連絡電話')) || str(g('承租人')) || itemLabel(g))) k = lastK;
+    if (!k) continue;
+    const m = rowOf[k] || (rowOf[k] = { _first: r });
+    const lab = itemLabel(g); if (lab && !(lab in m)) m[lab] = r;
+    lastK = k;
   }
   // 要寫的內容：這一輪的紀錄，依欄位分好
   const want = {};
   for (const e of liveEvents().filter(e => e.ts >= S.rosterAt).sort((a, b) => a.ts - b.ts)) {
     const w = noteLine(e); if (!w || !(e.key in rowOf) || h.map[w.col] == null) continue;
-    const id = rowOf[e.key] + '|' + h.map[w.col];
-    (want[id] = want[id] || { r: rowOf[e.key], c: h.map[w.col], lines: [] }).lines.push(w.text);
+    // 寫到這次處理的那幾個項目各自的那一列；沒指定就寫在這戶的第一列
+    const m = rowOf[e.key], rows = [...new Set((e.items || []).map(l => m[l]).filter(x => x != null))];
+    for (const r of rows.length ? rows : [m._first]) {
+      const id = r + '|' + h.map[w.col];
+      (want[id] = want[id] || { r, c: h.map[w.col], lines: [] }).lines.push(w.text);
+    }
   }
   const zip = await JSZip.loadAsync(src.buf);
   const P = s => new DOMParser().parseFromString(s, 'application/xml');
@@ -749,8 +796,8 @@ function dataSheets() {
   const evs = S.events.slice().sort((a, b) => a.ts - b.ts);
   const conf = { actions: S.actions, primary: S.primary, templates: S.templates, sal: S.sal, show: S.show, cfgAt: S.cfgAt };
   return [
-    { name: '_送信紀錄', rows: [['時間', '物件地址', '承租人', '動作', '結果', '備註', '寫回主表', '照片', '裝置', '已刪除', '紀錄編號', '時間戳', '修改戳', '動作代號'],
-      ...evs.map(e => { const o = S.roster[e.key] || {}, w = noteLine(e); return [fmtTime(e.ts), o.addr || e.key, o.tenant || '', A(e.kind).name, e.how, e.note, w ? `${w.col}：${w.text}` : '', e.hasPhoto ? '有' : '', e.device, e.deleted ? '是' : '', e.id, String(e.ts), String(e.mt || e.ts), e.kind]; })] },
+    { name: '_送信紀錄', rows: [['時間', '物件地址', '承租人', '動作', '結果', '備註', '寫回主表', '照片', '裝置', '已刪除', '紀錄編號', '時間戳', '修改戳', '動作代號', '項目'],
+      ...evs.map(e => { const o = S.roster[e.key] || {}, w = noteLine(e); return [fmtTime(e.ts), o.addr || e.key, o.tenant || '', A(e.kind).name, e.how, e.note, w ? `${w.col}：${w.text}` : '', e.hasPhoto ? '有' : '', e.device, e.deleted ? '是' : '', e.id, String(e.ts), String(e.mt || e.ts), e.kind, (e.items || []).join('、')]; })] },
     { name: '_送信設定', rows: [['名單', S.title], ['名單時間戳', String(S.rosterAt)], ['匯出時間', fmtTime(Date.now())], ['匯出裝置', DEVICE], ['設定JSON', JSON.stringify(conf)]] }
   ];
 }

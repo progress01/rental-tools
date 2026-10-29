@@ -1,5 +1,5 @@
 // 讓「送信登記」沒有網路時也能打開（只快取網頁本身，不碰任何資料）
-const CACHE = 'rental-tools-v3';
+const CACHE = 'rental-tools-v4';
 const FILES = ['./', './index.html', './send.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k))))); self.clients.claim(); });
