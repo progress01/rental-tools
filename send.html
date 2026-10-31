@@ -1151,7 +1151,20 @@ function bindMenu() {
   applyTags(); render();
   if (ui && ui.y) requestAnimationFrame(() => window.scrollTo(0, ui.y));
   if (pending) setTimeout(() => pending.asked ? pendBar() : askPending(), 400);
+  takeShared();
 })();
+// 從 LINE「分享」過來的 Excel：服務工作者先放進暫存，這裡拿出來讀
+async function takeShared() {
+  if (!/[?&]shared=1/.test(location.search)) return;
+  history.replaceState(null, '', location.pathname);
+  try {
+    const c = await caches.open('share-inbox'), r = await c.match('shared-file');
+    if (!r) return toast('沒有收到分享的檔案，請改用「📂 放入檔案」');
+    const name = decodeURIComponent(r.headers.get('x-name') || '分享的檔案.xlsx'), blob = await r.blob();
+    await c.delete('shared-file');
+    await loadFile(new File([blob], name));
+  } catch (e) { toast('讀不到分享的檔案，請改用「📂 放入檔案」'); }
+}
 </script>
 <script>if (location.protocol.startsWith("http") && "serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});</script>
 </body>
