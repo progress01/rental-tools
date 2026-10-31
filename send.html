@@ -1162,7 +1162,9 @@ async function takeShared() {
     if (!r) return toast('沒有收到分享的檔案，請改用「📂 放入檔案」');
     const name = decodeURIComponent(r.headers.get('x-name') || '分享的檔案.xlsx'), blob = await r.blob();
     await c.delete('shared-file');
-    await loadFile(new File([blob], name));
+    const noExt = !/\.xls[xm]?$/i.test(name); // LINE 分享時檔名會變成一串亂碼、沒有副檔名
+    await loadFile(new File([blob], noExt ? '主表.xlsx' : name));
+    if (noExt && S.srcName === '主表.xlsx' && S.title) { const src = await DB.get('kv', 'src'); const nm = S.title + '.xlsx'; if (src) { src.name = nm; await DB.set('kv', 'src', src); } S.srcName = nm; save(); }
   } catch (e) { toast('讀不到分享的檔案，請改用「📂 放入檔案」'); }
 }
 </script>
