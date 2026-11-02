@@ -1117,12 +1117,28 @@ function bindMenu() {
     </ol>
     <p class="hint">資料只存在這台電腦／手機的瀏覽器裡，不會上傳到任何地方。照片只存在拍照的那台手機。</p>
     <div class="row"><span class="grow"></span><button onclick="closeSheet()">關閉</button></div>`);
-  $('mWipe').onclick = async () => {
-    if (!confirm(`確定清空這台的所有資料？\n名單、${liveEvents().length} 筆紀錄、照片、範本和設定都會回到最初。`)) return;
-    if (prompt('最後確認：請輸入「清空」兩個字') !== '清空') return toast('沒有清空');
-    S = blankState();
+  $('mWipe').onclick = () => wipeSheet();
+}
+// 清空：不用打字，按住按鈕 3 秒（放開就取消），避免誤觸
+function wipeSheet() {
+  const n = unsynced();
+  openSheet(`<h3>🗑 清空這台的所有資料</h3>
+    <p>名單、${liveEvents().length} 筆紀錄、照片、範本和設定都會回到最初，<b>沒辦法復原</b>。</p>
+    ${n ? `<div class="syncbar">⚠ 有 <b>${n}</b> 筆紀錄還沒傳出去。<span class="grow"></span><button class="small primary" id="wBak">📤 先備份</button></div>` : '<p class="hint">✓ 紀錄都已經傳出去了。</p>'}
+    <button id="wHold" class="danger" style="width:100%;padding:16px;font-size:17px;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none"><span id="wBar" style="position:absolute;left:0;top:0;bottom:0;width:0;background:var(--danger-soft)"></span><span style="position:relative">按住這裡 3 秒清空</span></button>
+    <div class="row" style="margin-top:8px"><span class="hint">放開就會取消。</span><span class="grow"></span><button onclick="closeSheet()">不清空</button></div>`);
+  if ($('wBak')) $('wBak').onclick = () => { closeSheet(); exportFile(); };
+  const btn = $('wHold'), bar = $('wBar'); let t0 = 0, raf = 0;
+  const stop = () => { cancelAnimationFrame(raf); t0 = 0; bar.style.width = '0'; };
+  const tick = async () => {
+    const p = Math.min(1, (Date.now() - t0) / 3000); bar.style.width = (p * 100) + '%';
+    if (p < 1) { raf = requestAnimationFrame(tick); return; }
+    t0 = 0; S = blankState(); pending = null; justDone.clear(); saveUI();
     await DB.set('kv', 'state', S); await DB.set('kv', 'src', null); await DB.clear('photos'); closeSheet(); render(); toast('已清空');
   };
+  btn.addEventListener('pointerdown', e => { e.preventDefault(); t0 = Date.now(); raf = requestAnimationFrame(tick); });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => btn.addEventListener(ev, () => { if (t0) { stop(); toast('沒有清空（要按住 3 秒）'); } }));
+  btn.addEventListener('contextmenu', e => e.preventDefault());
 }
 
 /* ============ 啟動 ============ */
