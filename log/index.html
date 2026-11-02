@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2d6a4f">
+<title>工作日誌</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+:root{--bg:#f2f3ef;--card:#fff;--ink:#1f2622;--muted:#66706a;--line:#d9ddd5;--accent:#2d6a4f;--accent-soft:#e1efe7;--warn:#a15c00;--warn-soft:#fff1d9;--cal:#2f5fa7;--cal-soft:#e4ecf8}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif}
+header{position:sticky;top:0;z-index:5;background:var(--card);border-bottom:1px solid var(--line);padding:10px 14px;display:flex;align-items:center;gap:10px}
+h1{font-size:19px;margin:0}
+.wrap{max-width:720px;margin:0 auto;padding:12px 14px 100px}
+h2{font-size:14px;color:var(--muted);margin:18px 0 6px;letter-spacing:.05em}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+.lbl{font-size:13px;color:var(--muted);display:flex;justify-content:space-between;align-items:center}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font:inherit;font-size:15px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:5px 12px;cursor:pointer}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+.chip.add{border-style:dashed;color:var(--muted)}
+.row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+input,textarea{font:inherit;color:inherit;border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:#fff;width:100%;min-width:0}
+input.num{width:64px;text-align:center}
+button{font:inherit;border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:10px;padding:9px 14px;cursor:pointer}
+button.pri{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+button.cal{background:var(--cal-soft);border-color:var(--cal-soft);color:var(--cal);font-weight:700}
+button.sm{padding:4px 10px;font-size:14px;border-radius:8px}
+button.link{border:0;background:none;color:var(--accent);padding:2px 0;font-size:14px}
+.prev{font-size:17px;font-weight:700;background:var(--accent-soft);border-radius:10px;padding:10px 12px;border:0;resize:vertical}
+.go{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+.entry{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:6px}
+.entry.ok{opacity:.7}
+.entry .t{font-size:15px;word-break:break-all}
+.entry .acts{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.badge{font-size:12px;border-radius:6px;padding:1px 7px;background:var(--warn-soft);color:var(--warn)}
+.badge.ok{background:var(--accent-soft);color:var(--accent)}
+.hint{font-size:13px;color:var(--muted)}
+.sheet{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:20;display:flex;align-items:flex-end;justify-content:center}
+.sheet[hidden]{display:none}
+.sheet .box{background:#fff;width:100%;max-width:560px;border-radius:18px 18px 0 0;padding:16px 16px calc(18px + env(safe-area-inset-bottom));max-height:90vh;overflow:auto;display:flex;flex-direction:column;gap:10px}
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:10px;opacity:0;transition:.2s;pointer-events:none;z-index:30;max-width:90vw;text-align:center}
+.toast.on{opacity:1}
+</style>
+</head>
+<body>
+<header><h1>📝 工作日誌</h1><span style="flex:1"></span><button class="sm" id="bSet">⚙ 設定</button></header>
+<div class="wrap">
+  <div class="card" id="builder"></div>
+  <div id="pending"></div>
+  <div id="days"></div>
+</div>
+<div class="sheet" id="sheet" hidden><div class="box" id="box"></div></div>
+<div class="toast" id="toast"></div>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const pad = n => String(n).padStart(2, '0');
+const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const md = s => { const [, m, d] = s.split('-'); return `${+m}/${+d}`; };
+const wd = s => '日一二三四五六'[new Date(s + 'T00:00').getDay()];
+const today = () => iso(new Date());
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+function toast(m) { const t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove('on'), 2400); }
+
+// 選項：照他以前日曆上的寫法整理；點過的會排到前面，也可以自己加
+const DEF = {
+  prefix: '新店機廠站', me: '毅', email: '',
+  places: ['管委會', '地下空車位', '空屋'],
+  items: ['電子鎖', '馬桶', '馬桶蓋', '木門', '浴櫃門板', '面盆', '水龍頭', '暖風機', '遙控器', '加壓馬達', '漏水', '滿意度調查表', '返還通知函', '捷運局文件', '續租', '三方移轉', '租金管理費'],
+  acts: ['現勘', '聯絡通知', '聯絡廠商、訂料', '安排時間', '修繕', '貼單通知', '投遞', '取回', '簽認', '文件整理', '照片整理、彙送', '巡檢', '電話催打、簡訊發送'],
+  mates: ['德哥', '福興小胖', 'AMY']
+};
+const KEY = 'worklog-v1';
+let S;
+try { S = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { S = null; }
+S = Object.assign({ conf: JSON.parse(JSON.stringify(DEF)), use: {}, entries: [] }, S || {});
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('⚠ 存不起來'); } };
+const used = (k, v) => { S.use[k + '|' + v] = (S.use[k + '|' + v] || 0) + 1; };
+const sorted = k => S.conf[k].slice().sort((a, b) => (S.use[k + '|' + b] || 0) - (S.use[k + '|' + a] || 0));
+
+// 正在組的這一行
+let B = blank();
+function blank() { return { bld: '', fl: '', no: '', places: [], who: '', items: [], acts: [], mates: [], extra: '', edited: null }; }
+function placeNow() { if (!B.bld) return ''; return B.bld + (B.fl ? `${B.fl}樓` : '') + (B.fl && B.no ? `之${B.no}` : ''); }
+function placesAll() { const p = placeNow(); return [...B.places, ...(p && !B.places.includes(p) ? [p] : [])]; }
+function line() {
+  if (B.edited != null) return B.edited;
+  const parts = [placesAll().join('、'), B.who, B.items.join('、'), [B.acts.join('、'), B.extra].filter(Boolean).join('，')].filter(Boolean);
+  if (!parts.length) return '';
+  return S.conf.prefix + parts.join('，') + '_' + [S.conf.me, ...B.mates].join('、');
+}
+
+function chipRow(k, sel, multi = true) {
+  return `<div class="chips">${sorted(k).map(v => `<button class="chip ${sel.includes(v) ? 'on' : ''}" data-k="${k}" data-v="${esc(v)}">${esc(v)}</button>`).join('')}<button class="chip add" data-addk="${k}">＋</button></div>`;
+}
+function renderBuilder() {
+  const L = line();
+  $('builder').innerHTML = `
+    <div class="lbl">地點<span class="hint">打樓層和之幾，例：22、3</span></div>
+    <div class="row">
+      ${['153號', '161號'].map(b => `<button class="chip ${B.bld === b ? 'on' : ''}" data-bld="${b}">${b}</button>`).join('')}
+      <input class="num" id="fl" inputmode="numeric" placeholder="樓" value="${esc(B.fl)}"><span>之</span><input class="num" id="no" inputmode="numeric" placeholder="號" value="${esc(B.no)}">
+      <button class="sm" id="morePlace" title="同一行再加一個地點">＋另一戶</button>
+    </div>
+    ${B.places.length ? `<div class="chips">${B.places.map((p, i) => `<button class="chip on" data-rmp="${i}">${esc(p)} ✕</button>`).join('')}</div>` : ''}
+    <div class="chips">${sorted('places').map(v => `<button class="chip ${B.places.includes(v) ? 'on' : ''}" data-plc="${esc(v)}">${esc(v)}</button>`).join('')}<button class="chip add" data-addk="places">＋</button></div>
+    <div class="lbl">對象（可不填）</div>
+    <input id="who" placeholder="例：陳小姐、某某公司、車位 B2-B016" value="${esc(B.who)}">
+    <div class="lbl">事項</div>${chipRow('items', B.items)}
+    <div class="lbl">做了什麼</div>${chipRow('acts', B.acts)}
+    <input id="extra" placeholder="補充（可不填），例：約5/18上午9:30" value="${esc(B.extra)}">
+    <div class="lbl">一起的人</div>${chipRow('mates', B.mates)}
+    <div class="lbl">這一行（可以直接改字）${B.edited != null ? '<button class="link" id="unedit">照選的重組</button>' : ''}</div>
+    <textarea class="prev" id="prev" rows="2" placeholder="點上面的選項，這裡會組出日曆要的那一行">${esc(L)}</textarea>
+    <div class="go"><button class="pri" id="gSave" ${L ? '' : 'disabled'}>✓ 記下來</button><button class="cal" id="gCal" ${L ? '' : 'disabled'}>📅 上日曆</button><button id="gMail" ${L ? '' : 'disabled'}>✉️ 寄信箱</button></div>
+    <div class="row"><span class="hint" style="flex:1">記下來＝存到下面的清單；上日曆、寄信箱也會一起記下來。</span><button class="link" id="clr">清空重來</button></div>`;
+  bindBuilder();
+}
+function bindBuilder() {
+  const box = $('builder'), re = () => { B.edited = null; renderBuilder(); };
+  box.querySelectorAll('[data-bld]').forEach(b => b.onclick = () => { B.bld = B.bld === b.dataset.bld ? '' : b.dataset.bld; re(); });
+  // 打字時只更新下面那一行，不重畫，才不會打到一半跳掉
+  $('fl').oninput = ev => { B.fl = ev.target.value.replace(/\D/g, ''); B.edited = null; $('prev').value = line(); syncGo(); };
+  $('no').oninput = ev => { B.no = ev.target.value.replace(/\D/g, ''); B.edited = null; $('prev').value = line(); syncGo(); };
+  $('morePlace').onclick = () => { const p = placeNow(); if (!p) return toast('先選 153號／161號 和樓層'); if (!B.places.includes(p)) B.places.push(p); B.fl = ''; B.no = ''; re(); $('fl').focus(); };
+  box.querySelectorAll('[data-rmp]').forEach(b => b.onclick = () => { B.places.splice(+b.dataset.rmp, 1); re(); });
+  box.querySelectorAll('[data-plc]').forEach(b => b.onclick = () => { const v = b.dataset.plc; B.places.includes(v) ? B.places.splice(B.places.indexOf(v), 1) : B.places.push(v); re(); });
+  $('who').oninput = () => { B.who = $('who').value.trim(); B.edited = null; $('prev').value = line(); syncGo(); };
+  $('extra').oninput = () => { B.extra = $('extra').value.trim(); B.edited = null; $('prev').value = line(); syncGo(); };
+  box.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { const a = B[b.dataset.k], v = b.dataset.v; a.includes(v) ? a.splice(a.indexOf(v), 1) : a.push(v); re(); });
+  box.querySelectorAll('[data-addk]').forEach(b => b.onclick = () => addOpt(b.dataset.addk));
+  $('prev').oninput = () => { B.edited = $('prev').value; syncGo(); };
+  if ($('unedit')) $('unedit').onclick = re;
+  $('clr').onclick = () => { B = blank(); renderBuilder(); };
+  $('gSave').onclick = () => commit();
+  $('gCal').onclick = () => { const e = commit(true); if (e) calSheet(e); };
+  $('gMail').onclick = () => { const e = commit(true); if (e) mailSheet(e); };
+}
+function syncGo() { const ok = !!$('prev').value.trim(); ['gSave', 'gCal', 'gMail'].forEach(id => $(id).disabled = !ok); }
+function commit(quiet) {
+  const t = $('prev').value.trim(); if (!t) return null;
+  placesAll().forEach(v => used('places', v)); ['items', 'acts', 'mates'].forEach(k => B[k].forEach(v => used(k, v)));
+  const e = { id: uid(), d: today(), text: t.replace(/_OK$/, ''), ok: /_OK$/.test(t), cal: false, mail: false };
+  S.entries.unshift(e); save(); B = blank(); renderBuilder(); renderList(); scrollTo({ top: 0 });
+  if (!quiet) toast('記下來了'); return e;
+}
+function addOpt(k) {
+  const name = { places: '地點', items: '事項', acts: '做了什麼', mates: '一起的人' }[k];
+  openSheet(`<h3 style="margin:0">新增「${name}」的選項</h3><input id="newOpt" placeholder="例：${k === 'items' ? '瓦斯遮斷器' : k === 'acts' ? '核銷申報結案' : k === 'mates' ? '師傅名字' : 'D棟B3車位'}">
+    <div class="row" style="justify-content:flex-end"><button onclick="closeSheet()">取消</button><button class="pri" id="okOpt">加入並選取</button></div>`);
+  $('newOpt').focus();
+  $('okOpt').onclick = () => { const v = $('newOpt').value.trim(); if (!v) return; if (!S.conf[k].includes(v)) S.conf[k].push(v); used(k, v); used(k, v);
+    if (k === 'places') B.places.push(v); else B[k].push(v); save(); closeSheet(); B.edited = null; renderBuilder(); };
+}
+
+// 清單：還沒 OK 的放最上面；下面按日期
+function full(e) { return e.text + (e.ok ? '_OK' : ''); }
+function entryHTML(e, showDate) {
+  return `<div class="entry ${e.ok ? 'ok' : ''}"><div class="t">${showDate ? `<span class="hint">${md(e.d)}　</span>` : ''}${esc(full(e))}</div>
+    <div class="acts">${e.ok ? '<span class="badge ok">OK</span>' : '<span class="badge">還沒OK</span>'}${e.cal ? '<span class="hint">📅已上日曆</span>' : ''}${e.mail ? '<span class="hint">✉️已寄</span>' : ''}<span style="flex:1"></span>
+      <button class="sm" data-ok="${e.id}">${e.ok ? '取消OK' : '✓ OK'}</button><button class="sm" data-cal="${e.id}">📅</button><button class="sm" data-mail="${e.id}">✉️</button><button class="sm" data-copy="${e.id}">📋</button><button class="sm" data-more="${e.id}">⋯</button></div></div>`;
+}
+function renderList() {
+  const t = today(), pend = S.entries.filter(e => !e.ok && e.d < t);
+  $('pending').innerHTML = pend.length ? `<h2>之前還沒 OK 的（${pend.length}）</h2><div style="display:flex;flex-direction:column;gap:6px">${pend.map(e => entryHTML(e, true)).join('')}</div>` : '';
+  const days = {}; S.entries.forEach(e => (days[e.d] = days[e.d] || []).push(e));
+  const ks = Object.keys(days).sort().reverse().slice(0, 14);
+  $('days').innerHTML = ks.map(k => `<h2 style="display:flex;align-items:center"><span style="flex:1">${k === t ? '今天 ' : ''}${md(k)}（${wd(k)}）</span><button class="link" data-copyday="${k}">📋 複製這天全部</button></h2>
+    <div style="display:flex;flex-direction:column;gap:6px">${days[k].map(e => entryHTML(e)).join('')}</div>`).join('') || '<p class="hint" style="margin-top:18px">記下來的會出現在這裡，沒加「_OK」的就是還沒做完的事。</p>';
+  document.querySelectorAll('[data-ok]').forEach(b => b.onclick = () => { const e = find(b.dataset.ok); e.ok = !e.ok; save(); renderList(); toast(e.ok ? '已加上 _OK，要更新日曆就按 📅' : '已取消 OK'); });
+  document.querySelectorAll('[data-cal]').forEach(b => b.onclick = () => calSheet(find(b.dataset.cal)));
+  document.querySelectorAll('[data-mail]').forEach(b => b.onclick = () => mailSheet(find(b.dataset.mail)));
+  document.querySelectorAll('[data-copy]').forEach(b => b.onclick = () => copy(full(find(b.dataset.copy))));
+  document.querySelectorAll('[data-more]').forEach(b => b.onclick = () => moreSheet(find(b.dataset.more)));
+  document.querySelectorAll('[data-copyday]').forEach(b => b.onclick = () => { const k = b.dataset.copyday; copy(md(k) + '\n' + S.entries.filter(e => e.d === k).slice().reverse().map(full).join('\n')); });
+}
+const find = id => S.entries.find(e => e.id === id);
+function copy(t) { (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast('已複製'), () => { openSheet(`<b>長按選取後複製</b><textarea rows="6">${esc(t)}</textarea><div class="row" style="justify-content:flex-end"><button onclick="closeSheet()">關閉</button></div>`); }); }
+
+// 📅 Google 日曆：打開新增畫面，內容填好，選共享日曆後按儲存
+function calSheet(e) {
+  openSheet(`<h3 style="margin:0">📅 放上日曆</h3><div class="t" style="font-weight:700">${esc(full(e))}</div>
+    <div class="row"><span class="hint">哪一天</span><input type="date" id="cD" value="${e.d}" style="width:auto"><span class="hint">幾點（可不填＝整天）</span><input type="time" id="cT" style="width:auto"></div>
+    <div class="hint">按下去會打開 Google 日曆，標題已經填好。<b>記得把日曆選成公司共享的那個</b>，要提醒的話在那裡設「通知」，再按儲存。</div>
+    <div class="row" style="justify-content:flex-end"><button onclick="closeSheet()">取消</button><button class="cal" id="cGo">打開 Google 日曆</button></div>`);
+  $('cGo').onclick = () => {
+    const d = $('cD').value.replace(/-/g, ''), t = $('cT').value;
+    let dates;
+    if (t) { const st = d + 'T' + t.replace(':', '') + '00', en = new Date(`${$('cD').value}T${t}`); en.setHours(en.getHours() + 1); dates = `${st}/${iso(en).replace(/-/g, '')}T${pad(en.getHours())}${pad(en.getMinutes())}00`; }
+    else { const n = new Date($('cD').value + 'T00:00'); n.setDate(n.getDate() + 1); dates = `${d}/${iso(n).replace(/-/g, '')}`; }
+    e.cal = true; save(); renderList(); closeSheet();
+    location.href = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(full(e))}&dates=${dates}&ctz=Asia%2FTaipei`;
+  };
+}
+// ✉️ 寄到自己信箱：要追蹤的，在 Gmail 按「延後」，到那天會跳回收件匣
+function mailSheet(e) {
+  if (!S.conf.email) return setSheet('先設定要寄到哪個信箱');
+  const body = `${md(e.d)}\n${full(e)}\n\n（要追蹤的話：在 Gmail 打開這封信，按「延後」選日期，到那天會跳回收件匣最上面。）`;
+  e.mail = true; save(); renderList();
+  location.href = `mailto:${encodeURIComponent(S.conf.email)}?subject=${encodeURIComponent(full(e))}&body=${encodeURIComponent(body)}`;
+}
+function moreSheet(e) {
+  openSheet(`<h3 style="margin:0">修改這一行</h3><textarea id="mT" rows="3">${esc(e.text)}</textarea>
+    <div class="row"><span class="hint">日期</span><input type="date" id="mD" value="${e.d}" style="width:auto"></div>
+    <div class="row"><button class="link" id="mDel" style="color:#b0392b;margin-right:auto">刪除</button><button onclick="closeSheet()">取消</button><button class="pri" id="mOk">儲存</button></div>`);
+  $('mOk').onclick = () => { e.text = $('mT').value.trim().replace(/_OK$/, '') || e.text; e.d = $('mD').value || e.d; save(); closeSheet(); renderList(); };
+  $('mDel').onclick = () => { if (!$('mDel').dataset.s) { $('mDel').dataset.s = 1; $('mDel').textContent = '再按一次確定刪除'; return; } S.entries = S.entries.filter(x => x !== e); save(); closeSheet(); renderList(); };
+}
+function setSheet(msg) {
+  const c = S.conf;
+  openSheet(`<h3 style="margin:0">⚙ 設定</h3>${msg ? `<div class="badge" style="font-size:14px;padding:6px 10px">${esc(msg)}</div>` : ''}
+    <div class="lbl">每一行開頭</div><input id="sP" value="${esc(c.prefix)}">
+    <div class="lbl">自己的署名（加在 _ 後面）</div><input id="sM" value="${esc(c.me)}">
+    <div class="lbl">「寄信箱」寄到哪裡</div><input id="sE" type="email" value="${esc(c.email)}" placeholder="例：自己的 Gmail">
+    <div class="lbl">選項（一行一個，可刪改）</div>
+    ${['places', 'items', 'acts', 'mates'].map(k => `<div class="hint">${{ places: '地點', items: '事項', acts: '做了什麼', mates: '一起的人' }[k]}</div><textarea id="s_${k}" rows="3">${esc(c[k].join('\n'))}</textarea>`).join('')}
+    <div class="row" style="justify-content:flex-end"><button onclick="closeSheet()">取消</button><button class="pri" id="sOk">儲存</button></div>`);
+  $('sOk').onclick = () => { c.prefix = $('sP').value.trim(); c.me = $('sM').value.trim() || '毅'; c.email = $('sE').value.trim();
+    ['places', 'items', 'acts', 'mates'].forEach(k => c[k] = [...new Set($('s_' + k).value.split('\n').map(s => s.trim()).filter(Boolean))]);
+    save(); closeSheet(); renderBuilder(); toast('已儲存'); };
+}
+function openSheet(h) { $('box').innerHTML = h; $('sheet').hidden = false; }
+function closeSheet() { $('sheet').hidden = true; }
+$('sheet').onclick = ev => { if (ev.target.id === 'sheet') closeSheet(); };
+$('bSet').onclick = () => setSheet();
+renderBuilder(); renderList();
+if (location.protocol.startsWith('http') && 'serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>

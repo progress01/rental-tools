@@ -1,8 +1,8 @@
 // 讓「送信登記」沒有網路時也能打開（只快取網頁本身，不碰任何資料）
-const CACHE = 'rental-tools-v11';
+const CACHE = 'rental-tools-v12';
 const FILES = ['./', './index.html', './send.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES))); self.skipWaiting(); });
-self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE && k !== 'share-inbox').map(k => caches.delete(k))))); self.clients.claim(); });
+self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith('rental-tools-') && k !== CACHE).map(k => caches.delete(k))))); self.clients.claim(); });
 // 從 LINE 等 App「分享」Excel 過來：先把檔案放進暫存，再打開送信登記去讀
 self.addEventListener('fetch', e => {
   const u = new URL(e.request.url);
