@@ -1,5 +1,5 @@
 // 讓「工作日誌」沒有網路時也能打開（只快取網頁本身，資料存在手機裡）
-const CACHE = 'worklog-v1';
+const CACHE = 'worklog-v2';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith('worklog-') && k !== CACHE).map(k => caches.delete(k))))); self.clients.claim(); });
