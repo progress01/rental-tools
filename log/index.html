@@ -42,6 +42,15 @@ button.link{border:0;background:none;color:var(--accent);padding:2px 0;font-size
 .sheet{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:20;display:flex;align-items:flex-end;justify-content:center}
 .sheet[hidden]{display:none}
 .sheet .box{background:#fff;width:100%;max-width:560px;border-radius:18px 18px 0 0;padding:16px 16px calc(18px + env(safe-area-inset-bottom));max-height:90vh;overflow:auto;display:flex;flex-direction:column;gap:10px}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:4px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.tile b{display:block;font-size:30px;font-weight:900;line-height:1.1;font-variant-numeric:tabular-nums}
+.tile span{font-size:13px;color:var(--muted)}
+.tile.warn b{color:var(--warn)} .tile.ok b{color:var(--accent)}
+.entry.old{border-color:#e0a7a0;background:#fdf3f1}
+.again{display:flex;flex-direction:column;gap:6px}
+.again button{text-align:left;font-size:14px;padding:9px 12px;background:var(--card)}
+details summary{cursor:pointer;color:var(--muted);font-size:14px;margin:18px 0 6px}
 .fab{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom));z-index:6;font-size:19px;padding:14px 34px;border-radius:999px;box-shadow:0 6px 18px rgba(0,0,0,.18)}
 .intro{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:8px;margin-top:6px}
 .intro .ex{background:var(--accent-soft);border-radius:10px;padding:10px 12px;font-weight:700}
@@ -66,8 +75,10 @@ button.link{border:0;background:none;color:var(--accent);padding:2px 0;font-size
 <body>
 <header><h1>📝 工作日誌</h1><span style="flex:1"></span><button class="sm" id="bSet">⚙ 設定</button></header>
 <div class="wrap">
+  <div id="dash"></div>
   <div id="pending"></div>
   <div id="days"></div>
+  <div id="again"></div>
 </div>
 <button class="pri fab" id="bNew">＋ 記一筆</button>
 <div class="comp" id="builder" hidden></div>
@@ -189,21 +200,36 @@ function addOpt(k) {
 // 清單：還沒 OK 的放最上面；下面按日期
 function full(e) { return e.text + (e.ok ? '_OK' : ''); }
 function entryHTML(e, showDate) {
-  return `<div class="entry ${e.ok ? 'ok' : ''}"><div class="t">${showDate ? `<span class="hint">${md(e.d)}　</span>` : ''}${esc(full(e))}</div>
+  const age = !e.ok && showDate ? daysAgo(e.d) : 0;
+  return `<div class="entry ${e.ok ? 'ok' : ''} ${age >= 7 ? 'old' : ''}"><div class="t">${showDate ? `<span class="hint">${md(e.d)}（${age} 天前）　</span>` : ''}${esc(full(e))}</div>
     <div class="acts">${e.ok ? '<span class="badge ok">OK</span>' : '<span class="badge">還沒做完</span>'}${e.cal ? '<span class="hint">📅已上日曆</span>' : ''}${e.mail ? '<span class="hint">✉️已寄</span>' : ''}<span style="flex:1"></span>
       <button class="sm ${e.ok ? '' : 'pri'}" data-ok="${e.id}">${e.ok ? '取消OK' : '✓ 做完了'}</button><button class="sm" data-more="${e.id}">更多…</button></div></div>`;
 }
+const daysAgo = d => Math.round((new Date(today() + 'T00:00') - new Date(d + 'T00:00')) / 864e5);
+function weekStart() { const d = new Date(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return iso(d); }
 function renderList() {
-  const t = today(), pend = S.entries.filter(e => !e.ok && e.d < t);
+  const t = today(), list = S.entries;
+  const notDone = list.filter(e => !e.ok), pend = notDone.filter(e => e.d < t).sort((a, b) => a.d.localeCompare(b.d));
+  const todays = list.filter(e => e.d === t), weekOk = list.filter(e => e.ok && (e.okAt || e.d) >= weekStart()).length;
+  // 常記的：最近 40 筆裡出現過的不同句子，點一下帶入再改
+  const seen = new Set(), again = [];
+  for (const e of list.slice(0, 40)) { const k = e.text; if (!seen.has(k)) { seen.add(k); again.push(e.text); } if (again.length >= 3) break; }
+  $('dash').innerHTML = !list.length ? '' : `
+    <div class="tiles"><div class="tile warn"><b>${notDone.length}</b><span>還沒做完</span></div><div class="tile"><b>${todays.length}</b><span>今天記了</span></div><div class="tile ok"><b>${weekOk}</b><span>這週做完</span></div></div>`;
+  $('again').innerHTML = again.length ? `<h2>常記的，點一下再記一筆</h2><div class="again">${again.map((x, i) => `<button data-again="${i}">↻ ${esc(x)}</button>`).join('')}</div>` : '';
+  $('again').querySelectorAll('[data-again]').forEach(b => b.onclick = () => { B = blank(); B.edited = again[+b.dataset.again]; step = 3; $('builder').hidden = false; renderBuilder(); });
   $('pending').innerHTML = pend.length ? `<h2>之前還沒做完的（${pend.length}）</h2><div style="display:flex;flex-direction:column;gap:6px">${pend.map(e => entryHTML(e, true)).join('')}</div>` : '';
-  const days = {}; S.entries.forEach(e => (days[e.d] = days[e.d] || []).push(e));
+  const days = {}; list.filter(e => e.d !== t).forEach(e => (days[e.d] = days[e.d] || []).push(e));
   const ks = Object.keys(days).sort().reverse().slice(0, 14);
-  $('days').innerHTML = ks.map(k => `<h2 style="display:flex;align-items:center"><span style="flex:1">${k === t ? '今天 ' : ''}${md(k)}（${wd(k)}）</span><button class="link" data-copyday="${k}">📋 複製這天全部</button></h2>
-    <div style="display:flex;flex-direction:column;gap:6px">${days[k].map(e => entryHTML(e)).join('')}</div>`).join('') || `<div class="intro"><b style="font-size:18px">做完一件事，記一筆</b>
+  const dayBlock = k => `<h2 style="display:flex;align-items:center"><span style="flex:1">${k === t ? '今天 ' : ''}${md(k)}（${wd(k)}）</span><button class="link" data-copyday="${k}">📋 複製這天全部</button></h2>
+    <div style="display:flex;flex-direction:column;gap:6px">${(k === t ? todays : days[k]).map(e => entryHTML(e)).join('')}</div>`;
+  $('days').innerHTML = !list.length ? `<div class="intro"><b style="font-size:18px">做完一件事，記一筆</b>
       <div>按下面的「＋ 記一筆」，點地點、東西、做了什麼，就會組出日曆要的那一行，例如：</div>
       <div class="ex">新店機廠站161號22樓之5，水龍頭，修繕_毅、德哥</div>
-      <div>記好以後可以放上日曆、寄到信箱。還沒做完的會留在這裡，做完按「✓ 做完了」，後面就會加上 _OK。</div></div>`;
-  document.querySelectorAll('[data-ok]').forEach(b => b.onclick = () => { const e = find(b.dataset.ok); e.ok = !e.ok; save(); renderList(); toast(e.ok ? '已加上 _OK，要更新日曆就按 📅' : '已取消 OK'); });
+      <div>記好以後可以放上日曆、寄到信箱。還沒做完的會留在這裡，做完按「✓ 做完了」，後面就會加上 _OK。</div></div>`
+    : (todays.length ? dayBlock(t) : `<h2>今天 ${md(t)}（${wd(t)}）</h2><p class="hint">今天還沒記，按下面「＋ 記一筆」。</p>`)
+      + (ks.length ? `<details><summary>之前的紀錄（${ks.length} 天）</summary>${ks.map(dayBlock).join('')}</details>` : '');
+  document.querySelectorAll('[data-ok]').forEach(b => b.onclick = () => { const e = find(b.dataset.ok); e.ok = !e.ok; e.okAt = e.ok ? today() : ''; save(); renderList(); toast(e.ok ? '已加上 _OK，要更新日曆就按 📅' : '已取消 OK'); });
   document.querySelectorAll('[data-cal]').forEach(b => b.onclick = () => calSheet(find(b.dataset.cal)));
   document.querySelectorAll('[data-mail]').forEach(b => b.onclick = () => mailSheet(find(b.dataset.mail)));
   document.querySelectorAll('[data-copy]').forEach(b => b.onclick = () => copy(full(find(b.dataset.copy))));
