@@ -88,7 +88,7 @@
     <h1>📮 送信登記</h1>
     <span class="hint" id="monthLbl"></span>
     <span class="grow"></span>
-    <label class="btn primary" title="放入催收表，或另一台傳過來的送信紀錄">📂 放入檔案<input type="file" id="fileIn" accept=".xlsx,.xlsm"></label>
+    <label class="btn primary" title="放入催收表，或另一台傳過來的送信紀錄">📂 放入檔案<input type="file" id="fileIn"></label>
     <button id="bExport" title="把名單和紀錄存成 Excel，傳到另一台（手機／電腦）">📤 傳到另一台</button>
     <button id="bMenu">⋯</button>
   </div>
@@ -552,7 +552,7 @@ function render() {
     : `<div class="syncbar clean">✓ 紀錄都已經傳出去了${S.lastExport ? `（${fmtTime(S.lastExport)}）` : ''}</div>`;
   const list = $('list');
   if (!all.length) {
-    list.innerHTML = `<div class="empty" style="grid-column:1/-1"><b>先放入名單</b>按右上角「📂 放入檔案」，選這個月的催收表（或合併表）Excel<br>（電腦上也可以直接把檔案拖進來）。<p class="hint">如果是另一台傳過來的「送信紀錄」檔案，一樣用「放入檔案」。</p></div>`;
+    list.innerHTML = `<div class="empty" style="grid-column:1/-1"><b>先放入名單</b>按右上角「📂 放入檔案」，選這個月的催收表（或合併表）Excel<br>（電腦上也可以直接把檔案拖進來）。<p class="hint">如果是另一台傳過來的「送信紀錄」檔案，一樣用「放入檔案」。</p>${IS_PHONE ? '<p class="hint">LINE 收到的檔案：在 LINE 點檔案 →「儲存」，再回來按「📂 放入檔案」，選單裡點「最近」就會在最上面。</p>' : ''}</div>`;
     $('stat').textContent = ''; renderLog(); return;
   }
   const qs = query.normalize('NFKC').toLowerCase().split(/\s+/).filter(Boolean);
