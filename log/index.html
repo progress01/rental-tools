@@ -85,7 +85,7 @@ button.del{background:#b0392b;border-color:#b0392b;color:#fff;font-weight:700}
 </style>
 </head>
 <body>
-<header><h1>📝 工作日誌</h1><span class="hint" title="版本">v6・11/4</span><span style="flex:1"></span><button class="sm" id="bSet">⚙ 設定</button></header>
+<header><h1>📝 工作日誌</h1><span class="hint" title="版本">v7・11/5</span><span style="flex:1"></span><button class="sm" id="bSet">⚙ 設定</button></header>
 <div class="wrap">
   <div id="dash"></div>
   <div id="pending"></div>
@@ -344,9 +344,11 @@ function setSheet(msg) {
     <div class="lbl">整理舊資料（日曆、信箱上的不會動）</div>
     <button id="sOld">🗑 刪掉 30 天以前、已經做完（_OK）的</button>
     <div class="lbl">備份與匯入</div>
-    <div class="row"><button id="sExp" style="flex:1">⬇ 下載備份</button><label class="chip" style="flex:1;text-align:center;border-radius:10px;padding:9px;position:relative">⬆ 匯入<input type="file" id="sImp" style="position:absolute;inset:0;opacity:0"></label></div>
+    <div class="row"><button id="sExp" style="flex:1">⬇ 下載備份</button><label class="chip" style="flex:1;text-align:center;border-radius:10px;padding:9px;position:relative">⬆ 匯入檔案<input type="file" id="sImp" style="position:absolute;inset:0;opacity:0"></label></div>
+    <button id="sPaste">📋 貼上日曆文字匯入</button>
     <div class="hint">匯入可以放：之前下載的備份檔；或以前日曆的文字檔（.txt），一行一筆，日期寫在上面一行，例如「8/12」，結尾有 _OK 的會當成做完。</div>`);
   $('sExp').onclick = () => { const d = new Date(), a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify({ app: 'worklog', v: 1, S }, null, 1)], { type: 'application/json' })); a.download = `工作日誌備份_${iso(d)}.json`; document.body.appendChild(a); a.click(); a.remove(); };
+  $('sPaste').onclick = pasteSheet;
   $('sImp').onchange = async () => { const f = $('sImp').files[0]; if (!f) return; try { const n = importText(await f.text()); save(); closeSheet(); renderList(); toast(`匯入 ${n} 筆`); } catch (err) { toast('匯入失敗：' + err.message); } };
   $('sOld').onclick = () => { const lim = (() => { const d = new Date(); d.setDate(d.getDate() - 30); return iso(d); })(), old = S.entries.filter(e => e.ok && e.d < lim);
     if (!old.length) return toast('沒有 30 天以前做完的');
@@ -357,7 +359,7 @@ function setSheet(msg) {
     save(); closeSheet(); toast('已儲存'); };
 }
 // 匯入：備份檔（JSON）合併；或是日曆文字（日期一行、下面一行一筆）
-function importText(txt) {
+function importText(txt, baseDay) {
   const have = new Set(S.entries.map(e => e.d + '|' + e.text)); let n = 0;
   const add = x => { const k = x.d + '|' + x.text; if (!x.text || have.has(k)) return; have.add(k); S.entries.push(x); n++; };
   if (/^\s*\{/.test(txt)) {
@@ -366,18 +368,37 @@ function importText(txt) {
     for (const k of ['places', 'items', 'acts', 'mates']) (j.S.conf && j.S.conf[k] || []).forEach(v => { if (!S.conf[k].includes(v)) S.conf[k].push(v); });
   } else {
     // 舊日曆文字是過去的紀錄：照原樣匯入（有 _OK 的算做完），但不放進首頁「還沒做完」，用篩選才找得到
-    const now = new Date(); let d = null; const noDate = [];
+    const now = new Date(); let d = null, lastAdded = null; const noDate = [];
     for (const raw of txt.split(/\r?\n/)) {
       const l = raw.trim(); if (!l) continue;
-      const m = l.match(/^(\d{1,2})[\/／](\d{1,2})(?:\s*[（(].*[)）])?$/) || l.match(/^(\d{2})(\d{2})$/);
+      // 日期的寫法：8/12、8/14（五）、0731、11月4日 星期三、2026年11月4日
+      if (/^(全天|整天|上午|下午|中午|晚上)?\s*\d{0,2}[:：]?\d{0,2}\s*([–\-~～至到]\s*(上午|下午)?\s*\d{1,2}[:：]\d{2})?$/.test(l) || /^(全天|整天)$/.test(l)) continue; // 日曆複製時夾帶的時間，跳過
+      const m = l.match(/^(\d{1,2})[\/／](\d{1,2})(?:\s*[（(].*[)）])?$/) || l.match(/^(\d{2})(\d{2})$/) || l.match(/^(?:\d{4}年)?(\d{1,2})月(\d{1,2})日(?:\s*(?:星期|週|\(|（).*)?$/);
       if (m) { let y = now.getFullYear(); if (+m[1] > now.getMonth() + 2) y--; d = `${y}-${pad(+m[1])}-${pad(+m[2])}`; noDate.splice(0).forEach(x => { x.d = d; add(x); }); continue; }
+      const last = noDate.length ? noDate[noDate.length - 1] : lastAdded;
+      if (last && /^[_＿，,、。]/.test(l)) { const tx = last.text + (last.ok ? '_OK' : '') + l; last.text = tx.replace(/[_＿]OK$/i, ''); last.ok = /[_＿]OK$/i.test(tx); continue; } // LINE 裡斷行的下半句，接回上一行
       const x = { id: uid(), d, tm: '', text: l.replace(/[_＿]OK$/i, ''), ok: /[_＿]OK$/i.test(l), cal: true, mail: false, imp: true };
+      lastAdded = d ? x : null;
       if (d) add(x); else noDate.push(x); // 第一個日期之前的幾行，算在下一個日期
     }
-    noDate.forEach(x => { x.d = today(); add(x); });
+    noDate.forEach(x => { x.d = baseDay || today(); add(x); });
+    // 最近兩週的照常出現在首頁「還沒做完」；更早的才當成舊紀錄收起來
+    S.entries.forEach(e => { if (e.imp && daysAgo(e.d) <= 14) e.imp = false; });
   }
   S.entries.sort((a, b) => (b.d + (b.tm || '')).localeCompare(a.d + (a.tm || '')));
   return n;
+}
+// 貼上匯入：從 Google 日曆、記事本複製一段文字直接貼進來，不用存成檔案
+function pasteSheet() {
+  openSheet(`<h3 style="margin:0">📋 貼上日曆文字</h3>
+    <div class="hint">從 LINE、日曆或記事本複製紀錄，貼在下面。日期寫一行（例：8/12、11月4日），下面一行一筆；結尾有 _OK 的算做完。時間那幾行會自動略過。</div>
+    <div class="row"><span class="hint">沒寫日期的，算哪一天</span><input type="date" id="pD" style="width:auto"></div>
+    <textarea id="pT" rows="10" placeholder="8/12&#10;新店機廠站161號17樓之7，馬桶蓋更新，現勘_毅&#10;新店機廠161號8樓之5_滿意度調查表_簽認_毅_OK"></textarea>
+    <div class="hint" id="pPrev"></div>
+    <div class="row" style="justify-content:flex-end"><button onclick="closeSheet()">取消</button><button class="pri" id="pOk">匯入</button></div>`);
+  const prev = () => { const v = $('pT').value.split(/\r?\n/).map(s => s.trim()).filter(Boolean).length; $('pPrev').textContent = v ? `共 ${v} 行（日期那幾行不算在筆數裡）` : ''; };
+  $('pT').oninput = prev; $('pD').value = today();
+  $('pOk').onclick = () => { const v = $('pT').value; if (!v.trim()) return toast('先貼上文字'); try { const n = importText(v, $('pD').value); save(); closeSheet(); renderList(); toast(n ? `匯入 ${n} 筆，可以在「常記的」直接再用` : '沒有新的（都已經有了）'); } catch (err) { toast('匯入失敗：' + err.message); } };
 }
 function openSheet(h) { $('box').innerHTML = h; $('sheet').hidden = false; }
 function closeSheet() { $('sheet').hidden = true; }
