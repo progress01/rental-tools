@@ -120,7 +120,7 @@
     <div class="list" id="list"></div>
   </div>
   <div id="viewLog" class="hidden">
-    <div class="tools"><span class="stat" id="logStat"></span><span class="grow"></span><button id="bMaster" class="primary">📥 下載主表（紀錄寫回原本欄位）</button><button id="bLogXlsx">⬇ 下載工作日誌</button></div>
+    <div class="tools"><span class="stat" id="logStat"></span><span class="grow"></span><button id="bToday">📋 今天的工作日誌（貼到 LINE／日曆）</button><button id="bMaster" class="primary">📥 下載主表（紀錄寫回原本欄位）</button><button id="bLogXlsx">⬇ 下載工作日誌</button></div>
     <div style="overflow-x:auto"><table class="log" id="logTable"></table></div>
   </div>
 </div>
@@ -1015,6 +1015,62 @@ async function exportFile(asLog) {
 $('bExport').onclick = () => exportFile(false);
 $('bLogXlsx').onclick = () => exportFile(true);
 $('bMaster').onclick = exportMaster;
+$('bToday').onclick = () => todaySheet();
+
+/* ============ 今天的工作日誌：整理成文字，貼到 LINE、日曆或「工作日誌」 ============ */
+// 跟工作日誌一樣的寫法：日期一行，下面一行一筆「新店機廠站…_毅」
+function phraseOf(e) {
+  const a = A(e.kind);
+  if (a.type === 'sms') return a.fails.includes(e.how) ? '簡訊沒傳出去' : '簡訊通知';
+  if (a.type === 'call') return a.fails.includes(e.how) ? `電話${e.how}` : '電話催打';
+  if (e.kind === S.primary) return a.fails.includes(e.how) ? `貼單（${e.how}）` : '貼單通知';
+  if (a.type === 'note') return str(e.note) || '備註';
+  return `${a.name}${e.how ? '：' + e.how : ''}`;
+}
+const itemWord = l => /管理費|清潔費/.test(l) ? '管理費' : /租金/.test(l) ? '租金' : itemType(l);
+function todaySheet() {
+  const L = S.logFmt || (S.logFmt = { prefix: '新店機廠站', me: '毅', mode: 'both' });
+  openSheet(`<h3>📋 今天的工作日誌</h3>
+    <div class="row"><span class="hint">哪一天</span><input type="date" id="tdD" value="${todayISO()}" style="width:auto;padding:6px 10px"></div>
+    <div class="chips" id="tdM"><button class="chip" data-m="sum">只要一行總結</button><button class="chip" data-m="each">每戶一行</button><button class="chip" data-m="both">兩個都要</button></div>
+    <textarea id="tdT" rows="9" style="margin-top:8px;font-size:15px"></textarea>
+    <div class="hint" id="tdH"></div>
+    <div class="row" style="margin-top:8px"><button class="primary" id="tdCopy" style="flex:1">📋 複製</button><button id="tdShare" style="flex:1">📤 分享到 LINE…</button></div>
+    <div class="row" style="margin-top:6px"><span class="hint">開頭</span><input type="text" id="tdP" value="${esc(L.prefix)}" style="width:120px;padding:6px 8px"><span class="hint">署名</span><input type="text" id="tdS" value="${esc(L.me)}" style="width:70px;padding:6px 8px"><span class="grow"></span><button onclick="closeSheet()">關閉</button></div>
+    <p class="hint">複製後可以貼到 LINE 對話、共享日曆，或「工作日誌」的「貼上日曆文字匯入」。住戶姓名、電話不會放進去。</p>`);
+  const gen = () => {
+    const day = $('tdD').value, [y, m, d] = day.split('-').map(Number), s0 = new Date(y, m - 1, d).getTime(), s1 = s0 + 864e5;
+    const evs = liveEvents().filter(e => e.ts >= s0 && e.ts < s1).sort((a, b) => a.ts - b.ts);
+    const P = $('tdP').value.trim(), me = $('tdS').value.trim(), sig = me ? '_' + me : '';
+    $('tdM').querySelectorAll('[data-m]').forEach(b => b.classList.toggle('on', b.dataset.m === L.mode));
+    if (!evs.length) { $('tdT').value = ''; $('tdH').textContent = '這一天沒有紀錄'; return; }
+    // 每戶一行：同一戶同一天的動作合在一起
+    const per = {}, order = [];
+    for (const e of evs) {
+      const o = S.roster[e.key] || {}, k = e.key;
+      if (!per[k]) { per[k] = { door: doorOf(o.addr || e.key), items: new Set(), acts: [] }; order.push(k); }
+      (e.items && e.items.length ? e.items : (o.items || [])).forEach(l => per[k].items.add(itemWord(l)));
+      const ph = phraseOf(e); if (!per[k].acts.includes(ph)) per[k].acts.push(ph);
+    }
+    const each = order.map(k => { const r = per[k]; return `${P}${r.door}${r.items.size ? '，' + [...r.items].join('、') : ''}，${r.acts.join('、')}${sig}`; });
+    // 一行總結：哪幾棟、哪些費用、各做了幾戶
+    const blds = [...new Set(order.map(k => (per[k].door.match(/^\d+號/) || [''])[0]).filter(Boolean))];
+    const ORD = ['租金', '管理費'], allItems = [...new Set(order.flatMap(k => [...per[k].items]))].sort((a, b) => (ORD.indexOf(a) + 1 || 9) - (ORD.indexOf(b) + 1 || 9));
+    const cnt = {}; for (const k of order) for (const a of per[k].acts) cnt[a] = (cnt[a] || 0) + 1;
+    const sum = `${P}${blds.join('、')}${allItems.length ? '，' + allItems.join('、') : ''}，${Object.entries(cnt).map(([a, n]) => `${a}${n}戶`).join('、')}${sig}`;
+    const lines = L.mode === 'sum' ? [sum] : L.mode === 'each' ? each : [sum, ...each];
+    $('tdT').value = `${m}/${d}\n` + lines.join('\n');
+    $('tdH').textContent = `共 ${order.length} 戶、${evs.length} 筆紀錄。內容可以直接改。`;
+  };
+  $('tdD').onchange = gen;
+  $('tdM').querySelectorAll('[data-m]').forEach(b => b.onclick = () => { L.mode = b.dataset.m; touchCfg(); gen(); });
+  $('tdP').oninput = $('tdS').oninput = () => { L.prefix = $('tdP').value.trim(); L.me = $('tdS').value.trim(); touchCfg(); gen(); };
+  $('tdCopy').onclick = () => { const v = $('tdT').value; if (!v) return toast('沒有內容');
+    (navigator.clipboard ? navigator.clipboard.writeText(v) : Promise.reject()).then(() => toast('已複製，到 LINE 長按輸入框貼上'), () => { $('tdT').select(); toast('請長按文字選「全選」再複製'); }); };
+  $('tdShare').onclick = () => { const v = $('tdT').value; if (!v) return toast('沒有內容');
+    if (navigator.share) navigator.share({ text: v }).catch(() => {}); else { $('tdCopy').click(); } };
+  gen();
+}
 
 /* ============ 設定：簡訊範本 ============ */
 function tmplListSheet() {
@@ -1092,6 +1148,7 @@ function actEditSheet(a) {
 /* ============ 選單 ============ */
 $('bMenu').onclick = () => openSheet(`<h3>設定</h3>
   <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
+    <button id="mToday">📋 今天的工作日誌（貼到 LINE／日曆）</button>
     <button id="mTmpl">💬 簡訊範本</button>
     <button id="mAct">⚙ 按鈕選項設定</button>
     <button id="mCustom">🏷 自己維護的項目（例如延遲金）</button>
@@ -1102,6 +1159,7 @@ $('bMenu').onclick = () => openSheet(`<h3>設定</h3>
     <button onclick="closeSheet()">關閉</button>
   </div>`) ?? bindMenu();
 function bindMenu() {
+  $('mToday').onclick = todaySheet;
   $('mTmpl').onclick = tmplListSheet;
   $('mAct').onclick = actListSheet;
   $('mCols').onclick = colsSheet;
