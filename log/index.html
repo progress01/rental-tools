@@ -88,7 +88,7 @@ button.del{background:#b0392b;border-color:#b0392b;color:#fff;font-weight:700}
 </style>
 </head>
 <body>
-<header><h1>📝 工作日誌</h1><span class="hint" title="版本">v8・11/5</span><span style="flex:1"></span><button class="sm" id="bSet">⚙ 設定</button></header>
+<header><h1>📝 工作日誌</h1><span class="hint" title="版本">v9・11/5</span><span style="flex:1"></span><button class="sm" id="bSet">⚙ 設定</button></header>
 <div class="wrap">
   <div id="dash"></div>
   <div id="pending"></div>
@@ -210,7 +210,8 @@ function bindBuilder() {
 function commit(quiet) {
   const t = ($('prev') ? $('prev').value : line()).trim(); if (!t) { toast('還沒有內容，回上一步點選項'); return null; }
   placesAll().forEach(v => used('places', v)); ['items', 'acts', 'mates'].forEach(k => B[k].forEach(v => used(k, v)));
-  const n0 = new Date(), e = { id: uid(), d: today(), tm: `${pad(n0.getHours())}:${pad(n0.getMinutes())}`, text: t.replace(/_OK$/, ''), ok: /_OK$/.test(t), cal: false, mail: false, people: B.people.slice() };
+  const n0 = new Date(), e = { id: uid(), d: today(), tm: `${pad(n0.getHours())}:${pad(n0.getMinutes())}`, text: t.replace(/_OK$/, ''), ok: /_OK$/.test(t), cal: false, mail: false, people: B.people.slice(),
+    f: B.edited == null ? { place: placesAll().join('、'), who: B.who, items: B.items.join('、'), acts: [B.acts.join('、'), B.extra].filter(Boolean).join('，'), mates: B.mates.join('、') } : null };
   S.entries.unshift(e); save(); B = blank(); closeComposer(); renderList(); scrollTo({ top: 0 });
   if (!quiet) toast('記下來了'); return e;
 }
@@ -253,10 +254,11 @@ function renderList() {
     <div class="tiles"><div class="tile warn"><b>${notDone.length}</b><span>還沒做完</span></div><div class="tile"><b>${todays.length}</b><span>今天記了</span></div><div class="tile ok"><b>${weekOk}</b><span>這週做完</span></div></div>
     <div class="filters"><input id="fq" type="search" placeholder="🔍 找地點、東西、聯絡人，例：161 22、馬桶、福興" value="${esc(fq)}">
       <div class="chips">${Object.entries(FIL).map(([k, v]) => `<button class="chip ${fil === k ? 'on' : ''}" data-fil="${k}">${v}</button>`).join('')}</div></div>
-    <div class="row" style="justify-content:flex-end;margin-top:8px">${selMode ? '<span class="hint">點每一筆來勾選，下面按刪除</span>' : '<button class="sm" id="bSel">☑ 選取刪除</button>'}</div>`;
+    <div class="row" style="justify-content:flex-end;margin-top:8px">${selMode ? '<span class="hint">點每一筆來勾選，下面按刪除</span>' : '<button class="sm" id="bXls">⬇ 匯出 Excel</button><button class="sm" id="bSel">☑ 選取刪除</button>'}</div>`;
   $('dash').querySelectorAll('[data-fil]').forEach(b => b.onclick = () => { fil = b.dataset.fil; renderList(); });
   $('dash').querySelectorAll('.tile').forEach((b, i) => b.onclick = () => { fil = ['todo', 'all', 'ok'][i]; renderList(); });
   if ($('fq')) $('fq').oninput = ev => { fq = ev.target.value.trim(); const pos = ev.target.selectionStart; renderList(); const f = $('fq'); f.focus(); try { f.setSelectionRange(pos, pos); } catch (x) {} };
+  if ($('bXls')) $('bXls').onclick = xlsSheet;
   if ($('bSel')) $('bSel').onclick = () => { selMode = true; picked.clear(); renderList(); };
   $('again').innerHTML = again.length ? `<h2>常記的，點一下再記一筆</h2><div class="again">${again.map((x, i) => `<button data-again="${i}">↻ ${esc(x)}</button>`).join('')}</div>` : '';
   $('again').querySelectorAll('[data-again]').forEach(b => b.onclick = () => { B = blank(); B.edited = again[+b.dataset.again]; step = 3; $('builder').hidden = false; renderBuilder(); });
@@ -430,6 +432,86 @@ function pplEditor(box, arr) {
     sug();
   };
   draw();
+}
+/* ============ 匯出 Excel ============ */
+// 用點選記的，欄位分得很清楚；自己改過字或匯入的，只能從那一行拆出地點，其他放在「內容」
+function fieldsOf(e) {
+  if (e.f) return { place: e.f.place, who: e.f.who, items: e.f.items, acts: e.f.acts, mates: e.f.mates };
+  let s = e.text.replace(/^新店機廠站?[，,、]?/, ''), mates = '';
+  const u = s.lastIndexOf('_'); if (u >= 0) { mates = s.slice(u + 1).split(/[、,，]/).filter(x => x && x !== S.conf.me).join('、'); s = s.slice(0, u); }
+  const parts = s.split(/[，,]/).map(x => x.trim()).filter(Boolean);
+  // 開頭連續的地點（153號14樓之23、21樓之15、空屋…），用「、」分開的都算
+  const tok = /^(?:\d+號)?(?:\d+樓(?:之\d+)?)?(?:[A-Z]棟)?$|^(?:空屋|管委會|地下空車位)$/;
+  let place = '', rest = s;
+  const first = parts[0] || '', m0 = first.match(/^[^-－_]*/)[0], segs = m0.split('、'), got = [];
+  for (const g of segs) { const gg = g.trim(); if (gg && tok.test(gg)) got.push(gg); else break; }
+  if (got.length) { place = got.join('、'); const after = first.slice(first.indexOf(got[got.length - 1]) + got[got.length - 1].length).replace(/^[-－_、\s]+/, ''); parts[0] = after; rest = parts.filter(Boolean).join('，'); }
+  return { place, who: '', items: '', acts: rest, mates };
+}
+function xlsSheet() {
+  const d = new Date(), first = iso(new Date(d.getFullYear(), d.getMonth(), 1));
+  openSheet(`<h3 style="margin:0">⬇ 匯出 Excel</h3>
+    <div class="chips" id="xR"><button class="chip on" data-r="month">這個月</button><button class="chip" data-r="last">上個月</button><button class="chip" data-r="week">這週</button><button class="chip" data-r="all">全部</button></div>
+    <div class="row"><input type="date" id="xF" value="${first}" style="width:auto"><span>到</span><input type="date" id="xT" value="${today()}" style="width:auto"></div>
+    <label class="row"><input type="checkbox" id="xFil" ${fil !== 'all' || fq ? 'checked' : ''} style="width:auto"> 只匯出目前篩選的（${esc(FIL[fil])}${fq ? '・' + esc(fq) : ''}）</label>
+    <label class="row"><input type="checkbox" id="xPpl" checked style="width:auto"> 包含聯絡人電話（要交給公司的話可以取消）</label>
+    <div class="hint" id="xN"></div>
+    <div class="row" style="justify-content:flex-end"><button onclick="closeSheet()">取消</button><button class="pri" id="xGo">下載 Excel</button></div>`);
+  const pick = () => S.entries.filter(e => e.d >= ($('xF').value || '0000') && e.d <= ($('xT').value || '9999') && (!$('xFil').checked || passF(e))).sort((a, b) => (a.d + (a.tm || '')).localeCompare(b.d + (b.tm || '')));
+  const cnt = () => { $('xN').textContent = `共 ${pick().length} 筆`; };
+  $('xR').querySelectorAll('[data-r]').forEach(b => b.onclick = () => {
+    $('xR').querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === b));
+    const r = b.dataset.r, n = new Date();
+    if (r === 'month') { $('xF').value = iso(new Date(n.getFullYear(), n.getMonth(), 1)); $('xT').value = today(); }
+    if (r === 'last') { $('xF').value = iso(new Date(n.getFullYear(), n.getMonth() - 1, 1)); $('xT').value = iso(new Date(n.getFullYear(), n.getMonth(), 0)); }
+    if (r === 'week') { $('xF').value = weekStart(); $('xT').value = today(); }
+    if (r === 'all') { $('xF').value = ''; $('xT').value = ''; }
+    cnt();
+  });
+  ['xF', 'xT', 'xFil'].forEach(id => $(id).onchange = cnt); cnt();
+  $('xGo').onclick = () => {
+    const list = pick(); if (!list.length) return toast('這段時間沒有紀錄');
+    const withP = $('xPpl').checked;
+    const head = ['日期', '時間', '狀態', '地點', '對象', '事項', '做了什麼／內容', '一起的人', ...(withP ? ['聯絡人'] : []), '已上日曆', '已寄信', '完整一行'];
+    const rows = list.map(e => { const f = fieldsOf(e); return [e.d.replace(/-/g, '/'), e.tm || '', e.ok ? '做完' : '還沒做完', f.place, f.who, f.items, f.acts, f.mates, ...(withP ? [(e.people || []).map(x => [x.n, x.p].filter(Boolean).join(' ')).join('\n')] : []), e.cal ? '是' : '', e.mail ? '是' : '', full(e)]; });
+    const w = withP ? [11, 7, 9, 20, 14, 18, 28, 12, 22, 8, 7, 50] : [11, 7, 9, 20, 14, 18, 28, 12, 8, 7, 50];
+    const blob = xlsx('工作日誌', head, rows, w), a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = `工作日誌_${($('xF').value || '全部').replace(/-/g, '')}-${($('xT').value || '').replace(/-/g, '')}.xlsx`;
+    document.body.appendChild(a); a.click(); a.remove(); closeSheet(); toast(`已匯出 ${list.length} 筆`);
+  };
+}
+// 自己組 .xlsx（不用外部程式庫）：一個工作表、第一列粗體凍結、可篩選、自動換行
+function xlsx(name, head, rows, widths) {
+  const x = s => String(s ?? '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const col = i => { let s = ''; i++; while (i) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = (i - m - 1) / 26; } return s; };
+  const row = (r, cells, st) => `<row r="${r}">${cells.map((v, i) => `<c r="${col(i)}${r}" t="inlineStr" s="${st}"><is><t xml:space="preserve">${x(v)}</t></is></c>`).join('')}</row>`;
+  const last = col(head.length - 1) + (rows.length + 1);
+  const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>${widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('')}</cols><sheetData>${row(1, head, 1)}${rows.map((r, i) => row(i + 2, r, 2)).join('')}</sheetData><autoFilter ref="A1:${last}"/></worksheet>`;
+  const files = {
+    '[Content_Types].xml': '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>',
+    '_rels/.rels': '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
+    'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${x(name)}" sheetId="1" r:id="rId1"/></sheets><definedNames><definedName name="_xlnm._FilterDatabase" localSheetId="0" hidden="1">'${x(name)}'!$A$1:$${col(head.length - 1)}$${rows.length + 1}</definedName></definedNames></workbook>`,
+    'xl/_rels/workbook.xml.rels': '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>',
+    'xl/styles.xml': '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="12"/><name val="微軟正黑體"/></font><font><b/><sz val="12"/><name val="微軟正黑體"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE1EFE7"/></patternFill></fill></fills><borders count="2"><border/><border><left style="thin"><color rgb="FFBFC5BD"/></left><right style="thin"><color rgb="FFBFC5BD"/></right><top style="thin"><color rgb="FFBFC5BD"/></top><bottom style="thin"><color rgb="FFBFC5BD"/></bottom></border></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="3"><xf/><xf fontId="1" fillId="2" borderId="1" applyFont="1" applyFill="1" applyBorder="1"><alignment vertical="center" wrapText="1"/></xf><xf borderId="1" applyBorder="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf></cellXfs></styleSheet>',
+    'xl/worksheets/sheet1.xml': sheet
+  };
+  return new Blob([zipStore(files)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+// 最簡單的 zip（不壓縮）
+function zipStore(files) {
+  const enc = new TextEncoder(), T = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; T[n] = c >>> 0; }
+  const crc = b => { let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = T[(c ^ b[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+  const parts = [], central = []; let off = 0;
+  const u16 = n => [n & 255, (n >> 8) & 255], u32 = n => [n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >>> 24) & 255];
+  for (const [name, txt] of Object.entries(files)) {
+    const nb = enc.encode(name), data = enc.encode(txt), c = crc(data);
+    const head = [0x50, 0x4b, 3, 4, ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(c), ...u32(data.length), ...u32(data.length), ...u16(nb.length), ...u16(0)];
+    parts.push(new Uint8Array(head), nb, data);
+    central.push(new Uint8Array([0x50, 0x4b, 1, 2, ...u16(20), ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(c), ...u32(data.length), ...u32(data.length), ...u16(nb.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(off)]), nb);
+    off += head.length + nb.length + data.length;
+  }
+  const csize = central.reduce((s, a) => s + a.length, 0);
+  return new Blob([...parts, ...central, new Uint8Array([0x50, 0x4b, 5, 6, 0, 0, 0, 0, ...u16(Object.keys(files).length), ...u16(Object.keys(files).length), ...u32(csize), ...u32(off), 0, 0])]);
 }
 function openSheet(h) { $('box').innerHTML = h; $('sheet').hidden = false; }
 function closeSheet() { $('sheet').hidden = true; }
