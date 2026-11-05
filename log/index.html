@@ -63,6 +63,9 @@ button.del{background:#b0392b;border-color:#b0392b;color:#fff;font-weight:700}
 .filters{display:flex;flex-direction:column;gap:8px;margin-top:12px}
 .filters .chips .chip{font-size:14px;padding:4px 11px}
 .tile{cursor:pointer}
+.ppl{display:flex;flex-direction:column;gap:4px;font-size:15px;background:var(--bg);border-radius:10px;padding:6px 10px}
+.pp{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.pb{color:var(--accent);text-decoration:none;border:1px solid var(--line);background:#fff;border-radius:8px;padding:2px 8px;font-size:14px}
 .fab{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom));z-index:6;font-size:19px;padding:14px 34px;border-radius:999px;box-shadow:0 6px 18px rgba(0,0,0,.18)}
 .intro{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:8px;margin-top:6px}
 .intro .ex{background:var(--accent-soft);border-radius:10px;padding:10px 12px;font-weight:700}
@@ -85,7 +88,7 @@ button.del{background:#b0392b;border-color:#b0392b;color:#fff;font-weight:700}
 </style>
 </head>
 <body>
-<header><h1>📝 工作日誌</h1><span class="hint" title="版本">v7・11/5</span><span style="flex:1"></span><button class="sm" id="bSet">⚙ 設定</button></header>
+<header><h1>📝 工作日誌</h1><span class="hint" title="版本">v8・11/5</span><span style="flex:1"></span><button class="sm" id="bSet">⚙ 設定</button></header>
 <div class="wrap">
   <div id="dash"></div>
   <div id="pending"></div>
@@ -127,7 +130,7 @@ const sorted = k => S.conf[k].slice().sort((a, b) => (S.use[k + '|' + b] || 0) -
 
 // 正在組的這一行
 let B = blank();
-function blank() { return { bld: '', fl: '', no: '', places: [], who: '', items: [], acts: [], mates: [], extra: '', edited: null }; }
+function blank() { return { bld: '', fl: '', no: '', places: [], who: '', items: [], acts: [], mates: [], extra: '', edited: null, people: [] }; }
 function placeNow() { if (!B.bld) return ''; return B.bld + (B.fl ? `${B.fl}樓` : '') + (B.fl && B.no ? `之${B.no}` : ''); }
 function placesAll() { const p = placeNow(); return [...B.places, ...(p && !B.places.includes(p) ? [p] : [])]; }
 function line() {
@@ -161,6 +164,7 @@ function renderBuilder() {
     <div class="hint">補充（可不填）</div><input id="extra" enterkeyhint="next" placeholder="例：約5/18上午9:30" value="${esc(B.extra)}">`;
   else body = `
     <div class="hint">一起的人（可不選）</div>${chipRow('mates', B.mates)}
+    <div class="hint">這件事要聯絡的人（可不填，只存在這筆，不會寫進日曆）</div><div id="pplBox"></div>
     <div class="hint">這一行（可以直接改字）${B.edited != null ? ' <button class="link" id="unedit">照選的重組</button>' : ''}</div>
     <textarea class="prev" id="prev" rows="3">${esc(L)}</textarea>
     <div class="go"><button class="pri" id="gSave">✓ 記下來</button><button class="cal" id="gCal">📅 上日曆</button><button id="gMail">✉️ 寄信箱</button></div>
@@ -198,6 +202,7 @@ function bindBuilder() {
   nextOnEnter('extra', () => { step++; renderBuilder(); });
   // 2 位數的樓層打完自動跳到「之」
   if ($('fl')) $('fl').addEventListener('input', ev => { if (ev.target.value.length >= 2) $('no').focus(); });
+  if ($('pplBox')) pplEditor($('pplBox'), B.people);
   on('gSave', () => commit());
   on('gCal', () => { const e = commit(true); if (e) calSheet(e); });
   on('gMail', () => { const e = commit(true); if (e) mailSheet(e); });
@@ -205,7 +210,7 @@ function bindBuilder() {
 function commit(quiet) {
   const t = ($('prev') ? $('prev').value : line()).trim(); if (!t) { toast('還沒有內容，回上一步點選項'); return null; }
   placesAll().forEach(v => used('places', v)); ['items', 'acts', 'mates'].forEach(k => B[k].forEach(v => used(k, v)));
-  const n0 = new Date(), e = { id: uid(), d: today(), tm: `${pad(n0.getHours())}:${pad(n0.getMinutes())}`, text: t.replace(/_OK$/, ''), ok: /_OK$/.test(t), cal: false, mail: false };
+  const n0 = new Date(), e = { id: uid(), d: today(), tm: `${pad(n0.getHours())}:${pad(n0.getMinutes())}`, text: t.replace(/_OK$/, ''), ok: /_OK$/.test(t), cal: false, mail: false, people: B.people.slice() };
   S.entries.unshift(e); save(); B = blank(); closeComposer(); renderList(); scrollTo({ top: 0 });
   if (!quiet) toast('記下來了'); return e;
 }
@@ -226,6 +231,7 @@ function entryHTML(e, showDate) {
   const age = !e.ok && showDate ? daysAgo(e.d) : 0;
   if (selMode) return `<div class="entry ${picked.has(e.id) ? 'sel' : ''}" data-pick="${e.id}"><div class="t"><span class="ckb">${picked.has(e.id) ? '✓' : ''}</span><b>${md(e.d)}${e.tm ? ' ' + e.tm : ''}</b>　${esc(full(e))}</div></div>`;
   return `<div class="entry ${e.ok ? 'ok' : ''} ${age >= 7 ? 'old' : ''}"><div class="when">${showDate ? `${md(e.d)}（${wd(e.d)}）` : ''}${e.tm ? ` ${e.tm}` : ''}${showDate && age ? `<span class="hint">　${age} 天前</span>` : ''}</div><div class="t">${esc(full(e))}</div>
+    ${(e.people || []).length ? `<div class="ppl">${e.people.map(x => `<span class="pp"><b>${esc(x.n || '（沒寫名字）')}</b>${x.p ? `<a class="pb" href="tel:${esc(telOf(x.p))}">📞 ${esc(x.p)}</a><a class="pb" href="sms:${esc(telOf(x.p))}">💬</a>` : ''}</span>`).join('')}</div>` : ''}
     <div class="acts">${e.ok ? '<span class="badge ok">OK</span>' : '<span class="badge">還沒做完</span>'}${e.cal ? '<span class="hint">📅已上日曆</span>' : ''}${e.mail ? '<span class="hint">✉️已寄</span>' : ''}<span style="flex:1"></span>
       <button class="sm ${e.ok ? '' : 'pri'}" data-ok="${e.id}">${e.ok ? '取消OK' : '✓ 做完了'}</button><button class="sm" data-more="${e.id}">更多…</button></div></div>`;
 }
@@ -233,7 +239,7 @@ function entryHTML(e, showDate) {
 let fil = 'all', fq = '';
 const FIL = { all: '全部', todo: '還沒做完', ok: '做完了', cal: '📅 上過日曆', nocal: '還沒上日曆', mail: '✉️ 寄過信' };
 const passF = e => (fil === 'all' || (fil === 'todo' && !e.ok) || (fil === 'ok' && e.ok) || (fil === 'cal' && e.cal) || (fil === 'nocal' && !e.cal) || (fil === 'mail' && e.mail))
-  && (!fq || fq.split(/\s+/).every(w => (e.text + ' ' + md(e.d)).includes(w)));
+  && (!fq || fq.split(/\s+/).every(w => (e.text + ' ' + md(e.d) + ' ' + (e.people || []).map(x => x.n + ' ' + x.p + ' ' + x.p.replace(/\D/g, '')).join(' ')).includes(w)));
 const daysAgo = d => Math.round((new Date(today() + 'T00:00') - new Date(d + 'T00:00')) / 864e5);
 function weekStart() { const d = new Date(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return iso(d); }
 function renderList() {
@@ -245,7 +251,7 @@ function renderList() {
   for (const e of list.slice(0, 40)) { const k = e.text; if (!seen.has(k)) { seen.add(k); again.push(e.text); } if (again.length >= 3) break; }
   $('dash').innerHTML = !list.length ? '' : `
     <div class="tiles"><div class="tile warn"><b>${notDone.length}</b><span>還沒做完</span></div><div class="tile"><b>${todays.length}</b><span>今天記了</span></div><div class="tile ok"><b>${weekOk}</b><span>這週做完</span></div></div>
-    <div class="filters"><input id="fq" type="search" placeholder="🔍 找地點、東西，例：161 22、馬桶" value="${esc(fq)}">
+    <div class="filters"><input id="fq" type="search" placeholder="🔍 找地點、東西、聯絡人，例：161 22、馬桶、福興" value="${esc(fq)}">
       <div class="chips">${Object.entries(FIL).map(([k, v]) => `<button class="chip ${fil === k ? 'on' : ''}" data-fil="${k}">${v}</button>`).join('')}</div></div>
     <div class="row" style="justify-content:flex-end;margin-top:8px">${selMode ? '<span class="hint">點每一筆來勾選，下面按刪除</span>' : '<button class="sm" id="bSel">☑ 選取刪除</button>'}</div>`;
   $('dash').querySelectorAll('[data-fil]').forEach(b => b.onclick = () => { fil = b.dataset.fil; renderList(); });
@@ -326,9 +332,11 @@ function moreSheet(e) {
   openSheet(`<div class="go"><button class="cal" id="mCal">📅 上日曆</button><button id="mMail">✉️ 寄信箱</button><button id="mCopy">📋 複製</button></div>
     <h3 style="margin:6px 0 0">修改這一行</h3><textarea id="mT" rows="3">${esc(e.text)}</textarea>
     <div class="row"><span class="hint">日期</span><input type="date" id="mD" value="${e.d}" style="width:auto"></div>
+    <div class="hint">這件事要聯絡的人</div><div id="mPpl"></div>
     <div class="row"><button class="link" id="mDel" style="color:#b0392b;margin-right:auto">刪除</button><button onclick="closeSheet()">取消</button><button class="pri" id="mOk">儲存</button></div>`);
+  const ppl = (e.people || []).slice(); pplEditor($('mPpl'), ppl);
   $('mCal').onclick = () => calSheet(e); $('mMail').onclick = () => { closeSheet(); mailSheet(e); }; $('mCopy').onclick = () => { closeSheet(); copy(full(e)); };
-  $('mOk').onclick = () => { e.text = $('mT').value.trim().replace(/_OK$/, '') || e.text; e.d = $('mD').value || e.d; save(); closeSheet(); renderList(); };
+  $('mOk').onclick = () => { e.text = $('mT').value.trim().replace(/_OK$/, '') || e.text; e.d = $('mD').value || e.d; e.people = ppl; save(); closeSheet(); renderList(); };
   $('mDel').onclick = () => { if (!$('mDel').dataset.s) { $('mDel').dataset.s = 1; $('mDel').textContent = '再按一次確定刪除'; return; } S.entries = S.entries.filter(x => x !== e); save(); closeSheet(); renderList(); };
 }
 function setSheet(msg) {
@@ -399,6 +407,29 @@ function pasteSheet() {
   const prev = () => { const v = $('pT').value.split(/\r?\n/).map(s => s.trim()).filter(Boolean).length; $('pPrev').textContent = v ? `共 ${v} 行（日期那幾行不算在筆數裡）` : ''; };
   $('pT').oninput = prev; $('pD').value = today();
   $('pOk').onclick = () => { const v = $('pT').value; if (!v.trim()) return toast('先貼上文字'); try { const n = importText(v, $('pD').value); save(); closeSheet(); renderList(); toast(n ? `匯入 ${n} 筆，可以在「常記的」直接再用` : '沒有新的（都已經有了）'); } catch (err) { toast('匯入失敗：' + err.message); } };
+}
+// 聯絡人：只掛在這一筆上。打過的人會出現在下面，點一下就加，不用再打電話號碼
+const telOf = p => String(p).replace(/[^\d+#*]/g, '');
+function pplEditor(box, arr) {
+  const draw = () => {
+    const have = new Set(arr.map(x => x.n + '|' + x.p)), seen = new Set(), recent = [];
+    for (const e of S.entries) for (const x of e.people || []) { const k = x.n + '|' + x.p; if (!have.has(k) && !seen.has(k)) { seen.add(k); recent.push(x); } }
+    box.innerHTML = `${arr.length ? `<div class="chips">${arr.map((x, i) => `<button class="chip on" data-rm="${i}">${esc(x.n)} ${esc(x.p)} ✕</button>`).join('')}</div>` : ''}
+      <div class="row" style="margin-top:6px"><input id="pN" placeholder="名字，例：福興小胖" enterkeyhint="next" style="flex:1"><input id="pP" type="tel" placeholder="電話" enterkeyhint="done" style="flex:1"><button class="sm" id="pAdd">加</button></div>
+      <div id="pSug" class="chips" style="margin-top:6px"></div>`;
+    const sug = () => { const q = $('pN').value.trim(), pq = $('pP').value.replace(/\D/g, '');
+      const list = recent.filter(x => (!q || x.n.includes(q)) && (!pq || x.p.replace(/\D/g, '').includes(pq))).slice(0, 8);
+      $('pSug').innerHTML = list.length ? `<span class="hint" style="width:100%">之前聯絡過（點一下加入）：</span>` + list.map((x, i) => `<button class="chip" data-sg="${recent.indexOf(x)}">＋ ${esc(x.n)} ${esc(x.p)}</button>`).join('') : '';
+      $('pSug').querySelectorAll('[data-sg]').forEach(b => b.onclick = () => { arr.push(recent[+b.dataset.sg]); draw(); }); };
+    box.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { arr.splice(+b.dataset.rm, 1); draw(); });
+    const add = () => { const n = $('pN').value.trim(), p = $('pP').value.trim(); if (!n && !p) return; arr.push({ n, p }); draw(); toast('已加入聯絡人'); };
+    $('pAdd').onclick = add;
+    $('pN').oninput = sug; $('pP').oninput = sug;
+    $('pN').onkeydown = ev => { if (ev.key === 'Enter') { ev.preventDefault(); $('pP').focus(); } };
+    $('pP').onkeydown = ev => { if (ev.key === 'Enter') { ev.preventDefault(); add(); } };
+    sug();
+  };
+  draw();
 }
 function openSheet(h) { $('box').innerHTML = h; $('sheet').hidden = false; }
 function closeSheet() { $('sheet').hidden = true; }
