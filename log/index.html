@@ -41,6 +41,8 @@ button.link{border:0;background:none;color:var(--accent);padding:2px 0;font-size
 .hint{font-size:13px;color:var(--muted)}
 .sheet{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:20;display:flex;align-items:flex-end;justify-content:center}
 .sheet[hidden]{display:none}
+/* 視窗裡的東西不要被壓扁，太長就往下捲 */
+.sheet .box > *{flex-shrink:0}
 .sheet .box{background:#fff;width:100%;max-width:560px;border-radius:18px 18px 0 0;padding:16px 16px calc(18px + env(safe-area-inset-bottom));max-height:90vh;overflow:auto;display:flex;flex-direction:column;gap:10px}
 .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:4px}
 .tile{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
@@ -91,12 +93,12 @@ textarea.big{cursor:text}
 .comp .chip{font-size:17px;padding:8px 15px}
 .live{font-size:15px;font-weight:700;color:var(--accent);min-height:1.5em}
 .live.empty{color:var(--muted);font-weight:400}
-.toast{position:fixed;left:50%;bottom:calc(92px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:10px;opacity:0;transition:.2s;pointer-events:none;z-index:30;max-width:90vw;text-align:center}
+.toast{position:fixed;left:50%;top:calc(64px + env(safe-area-inset-top));transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:10px;opacity:0;transition:.2s;pointer-events:none;z-index:30;max-width:90vw;text-align:center}
 .toast.on{opacity:1}
 </style>
 </head>
 <body>
-<header><h1>📝 工作日誌</h1><span class="hint" title="版本">v11・11/6</span><span style="flex:1"></span><button class="sm" id="bSet">⚙ 設定</button></header>
+<header><h1>📝 工作日誌</h1><span class="hint" title="版本">v12・11/6</span><span style="flex:1"></span><button class="sm" id="bSet">⚙ 設定</button></header>
 <div class="wrap">
   <div id="dash"></div>
   <div id="pending"></div>
@@ -142,11 +144,14 @@ let B = blank();
 function blank() { return { bld: '', fl: '', no: '', places: [], who: '', items: [], acts: [], mates: [], extra: '', edited: null, people: [] }; }
 function placeNow() { if (!B.bld) return ''; return B.bld + (B.fl ? `${B.fl}樓` : '') + (B.fl && B.no ? `之${B.no}` : ''); }
 function placesAll() { const p = placeNow(); return [...B.places, ...(p && !B.places.includes(p) ? [p] : [])]; }
+// 整理一行：開頭重複的「新店機廠站新店機廠站」只留一個
+function fixLine(s) { const P = S.conf.prefix; s = String(s || '').trim(); if (P) while (s.startsWith(P + P)) s = s.slice(P.length); return s; }
 function line() {
   if (B.edited != null) return B.edited;
   const parts = [placesAll().join('、'), B.who, B.items.join('、'), [B.acts.join('、'), B.extra].filter(Boolean).join('，')].filter(Boolean);
   if (!parts.length) return '';
-  return S.conf.prefix + parts.join('，') + '_' + [S.conf.me, ...B.mates].join('、');
+  const P = S.conf.prefix, body = parts.join('，').replace(P ? new RegExp('^(' + P.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')+') : /^$/, '');
+  return P + body + '_' + [S.conf.me, ...B.mates].join('、');
 }
 
 function chipRow(k, sel) {
@@ -257,8 +262,12 @@ function renderList() {
   const notDone = list.filter(e => !e.ok && !e.imp), pend = notDone.filter(e => e.d < t).sort((a, b) => a.d.localeCompare(b.d));
   const todays = list.filter(e => e.d === t), weekOk = list.filter(e => e.ok && (e.okAt || e.d) >= weekStart()).length;
   // 常記的：最近 40 筆裡出現過的不同句子，點一下帶入再改
-  const seen = new Set(), again = [];
-  for (const e of list.slice(0, 40)) { const k = e.text; if (!seen.has(k)) { seen.add(k); again.push(e.text); } if (again.length >= 3) break; }
+  if (!Array.isArray(S.fav)) { // 第一次：先把最近記過的 3 句當成常用，之後自己管理
+    const seen = new Set(); S.fav = [];
+    for (const e of list.slice(0, 40)) { const k = fixLine(e.text); if (!seen.has(k)) { seen.add(k); S.fav.push({ id: uid(), text: k }); } if (S.fav.length >= 3) break; }
+    if (list.length) save();
+  }
+  const again = S.fav.map(f => f.text);
   $('dash').innerHTML = !list.length ? '' : `
     <div class="tiles"><div class="tile warn"><b>${notDone.length}</b><span>還沒做完</span></div><div class="tile"><b>${todays.length}</b><span>今天記了</span></div><div class="tile ok"><b>${weekOk}</b><span>這週做完</span></div></div>
     <div class="filters"><input id="fq" type="search" placeholder="🔍 找地點、東西、聯絡人，例：161 22、馬桶、福興" value="${esc(fq)}">
@@ -269,7 +278,9 @@ function renderList() {
   if ($('fq')) $('fq').oninput = ev => { fq = ev.target.value.trim(); const pos = ev.target.selectionStart; renderList(); const f = $('fq'); f.focus(); try { f.setSelectionRange(pos, pos); } catch (x) {} };
   if ($('bXls')) $('bXls').onclick = xlsSheet;
   if ($('bSel')) $('bSel').onclick = () => { selMode = true; picked.clear(); renderList(); };
-  $('again').innerHTML = again.length ? `<h2>常記的，點一下再記一筆</h2><div class="again">${again.map((x, i) => `<button data-again="${i}">↻ ${esc(x)}</button>`).join('')}</div>` : '';
+  $('again').innerHTML = `<h2 style="display:flex;align-items:center"><span style="flex:1">⭐ 常用，點一下帶入再記一筆</span><button class="link" id="favEdit">✎ 管理常用</button></h2>
+    <div class="again">${again.map((x, i) => `<button data-again="${i}">↻ ${esc(x)}</button>`).join('') || '<p class="hint">還沒有常用。按「✎ 管理常用」加，或在任何一筆的「更多…」按「⭐ 加到常用」。</p>'}</div>`;
+  $('favEdit').onclick = favSheet;
   $('again').querySelectorAll('[data-again]').forEach(b => b.onclick = () => { B = blank(); B.edited = again[+b.dataset.again]; step = 3; $('builder').hidden = false; renderBuilder(); });
   const filtering = list.length && (fil !== 'all' || fq);
   if (filtering) {
@@ -341,11 +352,13 @@ function mailSheet(e) {
 }
 function moreSheet(e) {
   openSheet(`<div class="go"><button class="cal" id="mCal">📅 上日曆</button><button id="mMail">✉️ 寄信箱</button><button id="mCopy">📋 複製</button></div>
+    <button id="mFav">⭐ 加到常用</button>
     <h3 style="margin:6px 0 0">修改這一行</h3><textarea id="mT" class="big" rows="3" data-title="修改這一行">${esc(e.text)}</textarea><div class="tapedit">點一下會打開大字編輯</div>
     <div class="row"><span class="hint">日期</span><input type="date" id="mD" value="${e.d}" style="width:auto"></div>
     <div class="hint">這件事要聯絡的人</div><div id="mPpl"></div>
     <div class="row"><button class="link" id="mDel" style="color:#b0392b;margin-right:auto">刪除</button><button onclick="closeSheet()">取消</button><button class="pri" id="mOk">儲存</button></div>`);
   const ppl = (e.people || []).slice(); pplEditor($('mPpl'), ppl);
+  $('mFav').onclick = () => { const tx = fixLine(e.text); if (!S.fav.some(f => f.text === tx)) S.fav.push({ id: uid(), text: tx }); save(); closeSheet(); renderList(); toast('已加到常用'); };
   $('mCal').onclick = () => calSheet(e); $('mMail').onclick = () => { closeSheet(); mailSheet(e); }; $('mCopy').onclick = () => { closeSheet(); copy(full(e)); };
   $('mOk').onclick = () => { e.text = $('mT').value.trim().replace(/_OK$/, '') || e.text; e.d = $('mD').value || e.d; e.people = ppl; save(); closeSheet(); renderList(); };
   $('mDel').onclick = () => { if (!$('mDel').dataset.s) { $('mDel').dataset.s = 1; $('mDel').textContent = '再按一次確定刪除'; return; } S.entries = S.entries.filter(x => x !== e); save(); closeSheet(); renderList(); };
@@ -358,8 +371,9 @@ function setSheet(msg) {
     <div class="lbl">每一行開頭</div><input id="sP" value="${esc(c.prefix)}">
     <div class="lbl">自己的署名（加在 _ 後面）</div><input id="sM" value="${esc(c.me)}">
     <div class="lbl">「寄信箱」寄到哪裡</div><input id="sE" type="email" value="${esc(c.email)}" placeholder="例：自己的 Gmail">
-    <div class="lbl">選項（一行一個，可刪改）</div>
-    ${['places', 'items', 'acts', 'mates'].map(k => `<div class="hint">${{ places: '地點', items: '事項', acts: '做了什麼', mates: '一起的人' }[k]}</div><textarea id="s_${k}" rows="3">${esc(c[k].join('\n'))}</textarea>`).join('')}
+    
+    <button id="sOpts">🔧 管理按鈕選項（地點、事項、做了什麼、一起的人）</button>
+    <button id="sFav">⭐ 管理常用</button>
     <div class="row" style="justify-content:flex-end"><button onclick="closeSheet()">取消</button><button class="pri" id="sOk">儲存</button></div>
     <hr style="border:0;border-top:1px solid var(--line);width:100%">
     <div class="lbl">整理舊資料（日曆、信箱上的不會動）</div>
@@ -375,9 +389,10 @@ function setSheet(msg) {
     if (!old.length) return toast('沒有 30 天以前做完的');
     const b = $('sOld'); if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = `再按一次，刪除 ${old.length} 筆`; return; }
     S.entries = S.entries.filter(e => !old.includes(e)); save(); closeSheet(); renderList(); toast(`已刪除 ${old.length} 筆`); };
+  $('sOpts').onclick = () => optsSheet('items'); $('sFav').onclick = favSheet;
   $('sZ').querySelectorAll('[data-z]').forEach(b => b.onclick = () => { c.zoom = +b.dataset.z; save(); applyZoom(); $('sZ').querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === b)); });
   $('sOk').onclick = () => { c.prefix = $('sP').value.trim(); c.me = $('sM').value.trim() || '毅'; c.email = $('sE').value.trim();
-    ['places', 'items', 'acts', 'mates'].forEach(k => c[k] = [...new Set($('s_' + k).value.split('\n').map(s => s.trim()).filter(Boolean))]);
+
     save(); closeSheet(); toast('已儲存'); };
 }
 // 匯入：備份檔（JSON）合併；或是日曆文字（日期一行、下面一行一筆）
@@ -525,6 +540,40 @@ function zipStore(files) {
   const csize = central.reduce((s, a) => s + a.length, 0);
   return new Blob([...parts, ...central, new Uint8Array([0x50, 0x4b, 5, 6, 0, 0, 0, 0, ...u16(Object.keys(files).length), ...u16(Object.keys(files).length), ...u32(csize), ...u32(off), 0, 0])]);
 }
+// ⭐ 常用：整行存起來，點一下就帶到「看一下，送出」那一步，可以新增、修改、刪除、排順序
+function favSheet() {
+  const L = S.fav;
+  openSheet(`<h3 style="margin:0">⭐ 管理常用</h3>
+    <div class="hint">點文字可以修改（會打開大字編輯）。↑↓ 排順序，✕ 刪掉。</div>
+    <div id="fvList" style="display:flex;flex-direction:column;gap:8px">${L.map((f, i) => `<div class="entry"><textarea class="big fvT" data-i="${i}" data-title="修改常用" rows="2">${esc(f.text)}</textarea>
+      <div class="acts"><span style="flex:1"></span><button class="sm" data-up="${i}" ${i ? '' : 'disabled'}>↑</button><button class="sm" data-dn="${i}" ${i < L.length - 1 ? '' : 'disabled'}>↓</button><button class="sm" data-rm="${i}" style="color:#b0392b">✕ 刪掉</button></div></div>`).join('') || '<p class="hint">還沒有常用。</p>'}</div>
+    <div class="lbl">新增一句常用</div>
+    <textarea id="fvNew" class="big" data-title="新增常用" rows="2" placeholder="例：新店機廠站153號、161號，租金管理費，電話催打、簡訊發送_毅"></textarea>
+    <div class="row"><button class="pri" id="fvAdd" style="flex:1">＋ 加入</button></div>
+    ${S.entries.length ? `<div class="lbl">或從最近記過的挑</div><div class="chips">${[...new Set(S.entries.slice(0, 30).map(e => fixLine(e.text)))].filter(x => !L.some(f => f.text === x)).slice(0, 8).map(x => `<button class="chip" data-pk="${esc(x)}" style="text-align:left">＋ ${esc(x)}</button>`).join('')}</div>` : ''}
+    <div class="row" style="justify-content:flex-end"><button class="pri" onclick="closeSheet()">完成</button></div>`);
+  const redraw = () => { save(); renderList(); favSheet(); };
+  document.querySelectorAll('.fvT').forEach(ta => ta.addEventListener('input', () => { const v = ta.value.trim(); if (v) { L[+ta.dataset.i].text = fixLine(v); save(); renderList(); } }));
+  document.querySelectorAll('[data-up]').forEach(b => b.onclick = () => { const i = +b.dataset.up; [L[i - 1], L[i]] = [L[i], L[i - 1]]; redraw(); });
+  document.querySelectorAll('[data-dn]').forEach(b => b.onclick = () => { const i = +b.dataset.dn; [L[i + 1], L[i]] = [L[i], L[i + 1]]; redraw(); });
+  document.querySelectorAll('#fvList [data-rm]').forEach(b => b.onclick = () => { L.splice(+b.dataset.rm, 1); redraw(); });
+  $('fvAdd').onclick = () => { const v = fixLine($('fvNew').value); if (!v) return toast('先寫一句'); L.push({ id: uid(), text: v }); redraw(); toast('已加入常用'); };
+  document.querySelectorAll('[data-pk]').forEach(b => b.onclick = () => { L.push({ id: uid(), text: b.dataset.pk }); redraw(); });
+}
+// 🔧 管理按鈕選項：一類一頁，選項是一顆一顆的，✕ 刪掉、下面加新的
+function optsSheet(k) {
+  const N = { places: '地點', items: '事項', acts: '做了什麼', mates: '一起的人' };
+  openSheet(`<h3 style="margin:0">🔧 管理按鈕選項</h3>
+    <div class="chips">${Object.entries(N).map(([kk, n]) => `<button class="chip ${kk === k ? 'on' : ''}" data-ok2="${kk}">${n}</button>`).join('')}</div>
+    <div class="hint">點 ✕ 刪掉；「${N[k]}」的按鈕會照常用的次數排序。</div>
+    <div class="chips">${S.conf[k].map((v, i) => `<button class="chip" data-rmo="${i}">${esc(v)} ✕</button>`).join('') || '<span class="hint">沒有選項</span>'}</div>
+    <div class="row"><input id="opNew" placeholder="新增一個${N[k]}" style="flex:1"><button class="pri" id="opAdd">加</button></div>
+    <div class="row" style="justify-content:flex-end"><button onclick="setSheet()">回設定</button><button class="pri" onclick="closeSheet()">完成</button></div>`);
+  document.querySelectorAll('[data-ok2]').forEach(b => b.onclick = () => optsSheet(b.dataset.ok2));
+  document.querySelectorAll('[data-rmo]').forEach(b => b.onclick = () => { S.conf[k].splice(+b.dataset.rmo, 1); save(); optsSheet(k); });
+  const add = () => { const v = $('opNew').value.trim(); if (!v) return; if (!S.conf[k].includes(v)) S.conf[k].push(v); save(); optsSheet(k); toast('已加入'); };
+  $('opAdd').onclick = add; $('opNew').onkeydown = ev => { if (ev.isComposing || ev.keyCode === 229) return; if (ev.key === 'Enter') { ev.preventDefault(); add(); } };
+}
 function openSheet(h) { $('box').innerHTML = h; $('sheet').hidden = false; }
 function closeSheet() { $('sheet').hidden = true; }
 // 大字編輯：點小的文字框，整個畫面變成一個大字的編輯區（鍵盤打開也還看得清楚），按「好了」帶回去
@@ -545,6 +594,8 @@ $('sheet').addEventListener('pointerdown', ev => { downOnBack = ev.target.id ===
 $('sheet').onclick = ev => { if (ev.target.id === 'sheet' && downOnBack) closeSheet(); downOnBack = false; };
 $('bSet').onclick = () => setSheet();
 $('bNew').onclick = openComposer;
+// 以前記的「新店機廠站新店機廠站…」整理成一個
+S.entries.forEach(e => { const f = fixLine(e.text); if (f !== e.text) { e.text = f; save(); } });
 applyZoom();
 $('selCancel').onclick = () => { selMode = false; picked.clear(); renderList(); };
 $('selDel').onclick = () => {
