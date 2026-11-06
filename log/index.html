@@ -88,7 +88,7 @@ button.del{background:#b0392b;border-color:#b0392b;color:#fff;font-weight:700}
 </style>
 </head>
 <body>
-<header><h1>📝 工作日誌</h1><span class="hint" title="版本">v9・11/5</span><span style="flex:1"></span><button class="sm" id="bSet">⚙ 設定</button></header>
+<header><h1>📝 工作日誌</h1><span class="hint" title="版本">v10・11/6</span><span style="flex:1"></span><button class="sm" id="bSet">⚙ 設定</button></header>
 <div class="wrap">
   <div id="dash"></div>
   <div id="pending"></div>
@@ -195,7 +195,7 @@ function bindBuilder() {
   if ($('prev')) $('prev').oninput = () => { B.edited = $('prev').value; $('live').textContent = B.edited; };
   on('unedit', re);
   // 鍵盤上的「下一步」／Enter：樓 → 之 → 對象 → 下一頁，不用自己點欄位
-  const nextOnEnter = (id, go) => { const el = $(id); if (el) el.onkeydown = ev => { if (ev.key === 'Enter' || ev.keyCode === 13) { ev.preventDefault(); go(); } }; };
+  const nextOnEnter = (id, go) => { const el = $(id); if (el) el.onkeydown = ev => { if (ev.isComposing || ev.keyCode === 229) return; if (ev.key === 'Enter' || ev.keyCode === 13) { ev.preventDefault(); go(); } }; };
   nextOnEnter('fl', () => $('no').focus());
   nextOnEnter('no', () => $('who').focus());
   nextOnEnter('who', () => { step++; renderBuilder(); });
@@ -427,8 +427,8 @@ function pplEditor(box, arr) {
     const add = () => { const n = $('pN').value.trim(), p = $('pP').value.trim(); if (!n && !p) return; arr.push({ n, p }); draw(); toast('已加入聯絡人'); };
     $('pAdd').onclick = add;
     $('pN').oninput = sug; $('pP').oninput = sug;
-    $('pN').onkeydown = ev => { if (ev.key === 'Enter') { ev.preventDefault(); $('pP').focus(); } };
-    $('pP').onkeydown = ev => { if (ev.key === 'Enter') { ev.preventDefault(); add(); } };
+    $('pN').onkeydown = ev => { if (ev.isComposing || ev.keyCode === 229) return; if (ev.key === 'Enter') { ev.preventDefault(); $('pP').focus(); } };
+    $('pP').onkeydown = ev => { if (ev.isComposing || ev.keyCode === 229) return; if (ev.key === 'Enter') { ev.preventDefault(); add(); } };
     sug();
   };
   draw();
@@ -515,7 +515,10 @@ function zipStore(files) {
 }
 function openSheet(h) { $('box').innerHTML = h; $('sheet').hidden = false; }
 function closeSheet() { $('sheet').hidden = true; }
-$('sheet').onclick = ev => { if (ev.target.id === 'sheet') closeSheet(); };
+// 點灰色背景才關：按下和放開都要在背景上。選取文字時手指拖到框外放開，不算
+let downOnBack = false;
+$('sheet').addEventListener('pointerdown', ev => { downOnBack = ev.target.id === 'sheet'; });
+$('sheet').onclick = ev => { if (ev.target.id === 'sheet' && downOnBack) closeSheet(); downOnBack = false; };
 $('bSet').onclick = () => setSheet();
 $('bNew').onclick = openComposer;
 $('selCancel').onclick = () => { selMode = false; picked.clear(); renderList(); };

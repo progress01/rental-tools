@@ -641,7 +641,10 @@ function pendBar() {
   $('pbGo').onclick = askPending;
   if ($('pbAgain')) $('pbAgain').onclick = () => { pending.at = Date.now(); pending.asked = false; saveUI(); location.href = again; }; $('pbNo').onclick = () => { pending = null; saveUI(); pendBar(); };
 }
-$('sheet').addEventListener('click', e => { if (e.target === $('sheet')) closeSheet(); });
+// 點灰色背景才關：按下和放開都要在背景上（選取文字、拖游標拖到框外放開不算）
+let downOnBack = false;
+$('sheet').addEventListener('pointerdown', e => { downOnBack = e.target === $('sheet'); });
+$('sheet').addEventListener('click', e => { if (e.target === $('sheet') && downOnBack) closeSheet(); downOnBack = false; });
 async function showPhoto(id) {
   const src = await DB.get('photos', id);
   openSheet(src ? `<img class="photo" style="max-height:70vh" src="${src}"><div class="row" style="justify-content:flex-end;margin-top:10px"><button onclick="closeSheet()">關閉</button></div>`
