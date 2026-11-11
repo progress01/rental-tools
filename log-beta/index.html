@@ -426,9 +426,11 @@ function setSheet(msg) {
     save(); closeSheet(); toast('已儲存'); };
 }
 // 匯入：備份檔（JSON）合併；或是日曆文字（日期一行、下面一行一筆）
-function importText(txt, baseDay) {
-  const have = new Set(S.entries.map(e => e.d + '|' + e.text)); let n = 0;
-  const add = x => { const k = x.d + '|' + x.text; if (!x.text || have.has(k)) return; have.add(k); S.entries.push(x); n++; };
+function importText(txt, baseDay, cid, onCal = true) {
+  const have = new Set(S.entries.map(e => e.d + '|' + e.text)); let n = 0, ord = cid ? nextOrd(cid) : 0;
+  const add = x => { const k = x.d + '|' + x.text; if (!x.text || have.has(k)) return; have.add(k);
+    if (cid && !x.cid) { x.cid = cid; x.ord = ord++; x.imp = false; } // 貼進案子的：當成這件案子的步驟
+    S.entries.push(x); n++; };
   if (/^\s*\{/.test(txt)) {
     const j = JSON.parse(txt); if (!j.S || !Array.isArray(j.S.entries)) throw new Error('這不是工作日誌的備份檔');
     j.S.entries.forEach(add);
@@ -446,7 +448,7 @@ function importText(txt, baseDay) {
       if (m) { let y = now.getFullYear(); if (+m[1] > now.getMonth() + 2) y--; d = `${y}-${pad(+m[1])}-${pad(+m[2])}`; noDate.splice(0).forEach(x => { x.d = d; add(x); }); continue; }
       const last = noDate.length ? noDate[noDate.length - 1] : lastAdded;
       if (last && /^[_＿，,、。]/.test(l)) { const tx = last.text + (last.ok ? '_OK' : '') + l; last.text = tx.replace(/[_＿]OK$/i, ''); last.ok = /[_＿]OK$/i.test(tx); continue; } // LINE 裡斷行的下半句，接回上一行
-      const x = { id: uid(), d, tm: '', text: l.replace(/[_＿]OK$/i, ''), ok: /[_＿]OK$/i.test(l), cal: true, mail: false, imp: true };
+      const x = { id: uid(), d, tm: '', text: l.replace(/[_＿]OK$/i, ''), ok: /[_＿]OK$/i.test(l), cal: onCal, mail: false, imp: true };
       lastAdded = d ? x : null;
       if (d) add(x); else noDate.push(x); // 第一個日期之前的幾行，算在下一個日期
     }
@@ -462,12 +464,25 @@ function pasteSheet() {
   openSheet(`<h3 style="margin:0">📋 貼上日曆文字</h3>
     <div class="hint">從 LINE、日曆或記事本複製紀錄，貼在下面。日期寫一行（例：8/12、11月4日），下面一行一筆；結尾有 _OK 的算做完。時間那幾行會自動略過。</div>
     <div class="row"><span class="hint">沒寫日期的，算哪一天</span><input type="date" id="pD" style="width:auto"></div>
+    <div class="lbl">放進哪件案子？（可不選）</div>
+    <div class="chips" id="pC"><button class="chip on" data-pcs="">不放，當一般紀錄</button>${S.cases.filter(c => !caseDone(c)).map(c => `<button class="chip" data-pcs="${c.id}">📁 ${esc(c.title)}</button>`).join('')}<button class="chip" data-pcs="__new">＋ 開一件新案子</button></div>
+    <input id="pCN" placeholder="新案子的名稱，例：161號6樓之1 退租點交" hidden>
+    <label class="row"><input type="checkbox" id="pCal" checked style="width:auto"> 這些已經放上日曆了（從 LINE 貼、還沒上日曆的就取消）</label>
     <textarea id="pT" class="big" rows="10" data-title="貼上日曆文字" placeholder="8/12&#10;新店機廠站161號17樓之7，馬桶蓋更新，現勘_毅&#10;新店機廠161號8樓之5_滿意度調查表_簽認_毅_OK"></textarea>
     <div class="hint" id="pPrev"></div>
     <div class="row" style="justify-content:flex-end"><button onclick="closeSheet()">取消</button><button class="pri" id="pOk">匯入</button></div>`);
   const prev = () => { const v = $('pT').value.split(/\r?\n/).map(s => s.trim()).filter(Boolean).length; $('pPrev').textContent = v ? `共 ${v} 行（日期那幾行不算在筆數裡）` : ''; };
   $('pT').oninput = prev; $('pD').value = today();
-  $('pOk').onclick = () => { const v = $('pT').value; if (!v.trim()) return toast('先貼上文字'); try { const n = importText(v, $('pD').value); save(); closeSheet(); renderList(); toast(n ? `匯入 ${n} 筆，可以在「常記的」直接再用` : '沒有新的（都已經有了）'); } catch (err) { toast('匯入失敗：' + err.message); } };
+  let pcSel = openCaseId || '';
+  const pcSync = () => { $('pC').querySelectorAll('[data-pcs]').forEach(b => b.classList.toggle('on', b.dataset.pcs === pcSel)); $('pCN').hidden = pcSel !== '__new'; };
+  $('pC').querySelectorAll('[data-pcs]').forEach(b => b.onclick = () => { pcSel = b.dataset.pcs; pcSync(); });
+  pcSync();
+  $('pOk').onclick = () => { const v = $('pT').value; if (!v.trim()) return toast('先貼上文字'); try {
+    let cid = pcSel;
+    if (cid === '__new') { const nm = $('pCN').value.trim(); if (!nm) return toast('請寫新案子的名稱'); const c = { id: uid(), title: nm, place: '', created: today() }; S.cases.unshift(c); cid = c.id; }
+    const n = importText(v, $('pD').value, cid || '', $('pCal').checked); save(); closeSheet(); renderList();
+    if (cid) openCase(cid);
+    toast(n ? (cid ? `已把 ${n} 筆放進案子` : `匯入 ${n} 筆`) : '沒有新的（都已經有了）'); } catch (err) { toast('匯入失敗：' + err.message); } };
 }
 // 聯絡人：只掛在這一筆上。打過的人會出現在下面，點一下就加，不用再打電話號碼
 const telOf = p => String(p).replace(/[^\d+#*]/g, '');
@@ -667,7 +682,7 @@ function openCase(id) {
           <div class="row"><input type="date" data-sd="${e.id}" value="${e.d}" style="width:auto;padding:4px 8px;font-size:15px"><span class="hint">${wd(e.d) ? '（' + wd(e.d) + '）' : ''}${e.cal ? '　📅已上日曆' : ''}</span></div>
           <div style="word-break:break-all">${esc(full(e))}</div>
           <div class="row"><span style="flex:1"></span><button class="sm cal" data-cal="${e.id}">📅 上日曆</button><button class="sm" data-more="${e.id}">更多…</button></div></div></div>`).join('') || '<p class="hint">還沒有步驟。</p>'}
-      <button class="pri" id="cvAdd">＋ 加一步</button>
+      <div class="row"><button class="pri" id="cvAdd" style="flex:2">＋ 加一步</button><button id="cvPaste" style="flex:1">📋 貼上</button></div>
       <div class="row"><button id="cvCopy" style="flex:1">⧉ 複製成新案子</button><button id="cvTpl" style="flex:1">⭐ 存成範本</button></div>
       <button id="cvDel" style="color:#b0392b">🗑 刪除整件案子（連同步驟）</button>
     </div>`;
@@ -681,6 +696,7 @@ function openCase(id) {
   box.querySelectorAll('[data-more]').forEach(b => b.onclick = () => moreSheet(find(b.dataset.more)));
   $('cvAdd').onclick = () => { B = blank(); B.cid = c.id; if (c.place) B.places = [c.place]; step = 0; $('builder').hidden = false; renderBuilder(); };
   $('cvCopy').onclick = () => newCaseSheet({ fromCase: c });
+  $('cvPaste').onclick = pasteSheet;
   $('cvTpl').onclick = () => saveTplSheet(c);
   $('cvDel').onclick = () => { const b = $('cvDel'); if (!b.dataset.s) { b.dataset.s = 1; b.textContent = `再按一次：刪掉這件案子和 ${st.length} 個步驟`; return; }
     S.entries = S.entries.filter(e => e.cid !== c.id); S.cases = S.cases.filter(x => x !== c); save(); closeCase(); toast('已刪除整件案子（日曆上的不會動）'); };
