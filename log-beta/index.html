@@ -76,6 +76,17 @@ button.del{background:#b0392b;border-color:#b0392b;color:#fff;font-weight:700}
 .bigEd textarea{flex:1;border:0;border-radius:0;font-size:22px;line-height:1.7;padding:14px 16px;resize:none;background:var(--card)}
 textarea.big{cursor:text}
 .tapedit{font-size:13px;color:var(--muted);margin-top:-4px}
+.tour{position:fixed;inset:0;z-index:60}
+.tour[hidden]{display:none}
+.tour .hole{position:fixed;border-radius:14px;box-shadow:0 0 0 9999px rgba(15,20,18,.62);outline:3px solid #ffd76a;transition:all .25s;pointer-events:none}
+.tour .tip{position:fixed;left:12px;right:12px;max-width:520px;margin:0 auto;background:#fff;border-radius:16px;padding:16px;box-shadow:0 10px 30px rgba(0,0,0,.25);display:flex;flex-direction:column;gap:10px}
+.tour .tip h4{margin:0;font-size:20px}
+.tour .tip p{margin:0;font-size:17px;line-height:1.6}
+.tour .tip .row button{font-size:17px;padding:11px 16px}
+.tour .dots{display:flex;gap:5px}
+.tour .dots i{width:8px;height:8px;border-radius:9px;background:var(--line)}
+.tour .dots i.on{background:var(--accent)}
+@media (prefers-reduced-motion: reduce){.tour .hole{transition:none}}
 .abar{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--card);border-top:1px solid var(--line);box-shadow:0 -4px 14px rgba(0,0,0,.06);padding:8px max(10px,env(safe-area-inset-left)) calc(8px + env(safe-area-inset-bottom));display:grid;grid-template-columns:1fr 1.4fr 1fr;gap:8px}
 .abar[hidden]{display:none}
 .abar button{font-size:17px;padding:13px 6px;border-radius:12px;font-weight:700}
@@ -117,7 +128,7 @@ details.tools summary{margin:4px 0;color:var(--ink);font-size:15px}
 </style>
 </head>
 <body>
-<header><h1>📝 工作日誌</h1><span class="hint" title="版本">v14・11/11</span><span style="flex:1"></span><button class="sm" id="bSet">⚙ 設定</button></header>
+<header><h1>📝 工作日誌</h1><span class="hint" title="版本">v15・11/11</span><span style="flex:1"></span><button class="sm" id="bSet">⚙ 設定</button></header>
 <div class="wrap">
   <div id="dash"></div>
   <div id="pending"></div>
@@ -126,6 +137,7 @@ details.tools summary{margin:4px 0;color:var(--ink);font-size:15px}
   <div id="again"></div>
 </div>
 <div class="abar" id="abar"><button id="bPaste">📋 貼上</button><button class="pri" id="bNew">＋ 記一筆</button><button id="bCase2">📁 開案子</button></div>
+<div class="tour" id="tour" hidden><div class="hole" id="tourHole"></div><div class="tip" id="tourTip"></div></div>
 <div class="selbar" id="selbar" hidden><span id="selN" style="flex:1">已選 0 筆</span><button id="selCancel">取消</button><button class="del" id="selDel" disabled>🗑 刪除</button></div>
 <div class="caseV" id="caseV" hidden></div>
 <div class="comp" id="builder" hidden></div>
@@ -405,6 +417,7 @@ function moreSheet(e) {
 function setSheet(msg) {
   const c = S.conf;
   openSheet(`<h3 style="margin:0">⚙ 設定</h3>${msg ? `<div class="badge" style="font-size:14px;padding:6px 10px">${esc(msg)}</div>` : ''}
+    <button id="sTour">📖 再看一次操作教學</button>
     <div class="lbl">字的大小</div>
     <div class="chips" id="sZ">${[[1, '標準'], [1.15, '大'], [1.3, '特大']].map(([z, n]) => `<button class="chip ${(c.zoom || 1) === z ? 'on' : ''}" data-z="${z}">${n}</button>`).join('')}</div>
     <div class="lbl">每一行開頭</div><input id="sP" value="${esc(c.prefix)}">
@@ -429,6 +442,7 @@ function setSheet(msg) {
     if (!old.length) return toast('沒有 30 天以前做完的');
     const b = $('sOld'); if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = `再按一次，刪除 ${old.length} 筆`; return; }
     S.entries = S.entries.filter(e => !old.includes(e)); S.cases = S.cases.filter(c => !oldCases.includes(c)); save(); closeSheet(); renderList(); toast(`已刪除 ${old.length} 筆`); };
+  $('sTour').onclick = () => { closeSheet(); startTour(); };
   $('sOpts').onclick = () => optsSheet('items'); $('sFav').onclick = favSheet;
   $('sZ').querySelectorAll('[data-z]').forEach(b => b.onclick = () => { c.zoom = +b.dataset.z; save(); applyZoom(); $('sZ').querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === b)); });
   $('sOk').onclick = () => { c.prefix = $('sP').value.trim(); c.me = $('sM').value.trim() || '毅'; c.email = $('sE').value.trim();
@@ -789,7 +803,46 @@ $('sheet').onclick = ev => { if (ev.target.id === 'sheet' && downOnBack) closeSh
 $('bSet').onclick = () => setSheet();
 $('bNew').onclick = openComposer;
 $('bPaste').onclick = pasteSheet;
+/* ============ 操作教學：第一次打開時，一步一步框出畫面上的東西 ============ */
+const TOUR = [
+  { el: '#bNew', t: '＋ 記一筆', p: '做完一件事就按這裡。點地點、點東西、點做了什麼，就會組出日曆要的那一行，不用打字。' },
+  { el: '#bPaste', t: '📋 貼上', p: '在 LINE 或日曆「複製」了一段文字，按這裡就會自動放進來，一行變一筆。' },
+  { el: '#bCase2', t: '📁 開案子', p: '有好幾個步驟的事（例如退租點交、維修）開成一件案子，一步一步打勾，看得到做到哪裡。' },
+  { el: '#dash .tiles', t: '三個數字', p: '還沒做完幾筆、今天記了幾筆、這週做完幾筆。點數字可以直接列出那些紀錄。' },
+  { el: '#tools', t: '🔍 搜尋、匯出、刪除', p: '要找某一戶、某件事，或是匯出 Excel、一次刪很多筆，點這一行打開。' },
+  { el: '#pending h2, #cases h2', t: '要追的事', p: '⚠ 之前還沒做完的會排在最前面，超過 7 天會變紅。下面是進行中的案子和進度。' },
+  { el: '#days .entry, #pending .entry', t: '每一筆紀錄', p: '做完按「✓ 做完了」，後面會加上 _OK。按「更多…」可以上日曆、寄信箱、改字、放進案子。' },
+  { el: '#again h2', t: '⭐ 常用', p: '常做的事放這裡，點一下就帶入，改一改就送出。' },
+  { el: '#bSet', t: '⚙ 設定', p: '字太小可以在這裡放大；也可以管理按鈕選項、常用，下載備份。想再看這個教學，也在這裡。' }
+];
+const TOUR_KEY = (BETA ? 'worklog-beta' : 'worklog') + '-tour-done';
+let tourI = 0, tourList = [];
+function startTour() {
+  tourList = TOUR.filter(s => document.querySelector(s.el)); if (!tourList.length) return;
+  tourI = 0; $('tour').hidden = false; showTour();
+}
+function endTour() { $('tour').hidden = true; try { localStorage.setItem(TOUR_KEY, '1'); } catch (e) {} }
+function showTour() {
+  const s = tourList[tourI], el = document.querySelector(s.el); if (!el) return endTour();
+  el.scrollIntoView({ block: 'center' });
+  setTimeout(() => {
+    const r = el.getBoundingClientRect(), pad = 6, H = innerHeight, hole = $('tourHole'), tip = $('tourTip');
+    Object.assign(hole.style, { left: (r.left - pad) + 'px', top: (r.top - pad) + 'px', width: (r.width + pad * 2) + 'px', height: (r.height + pad * 2) + 'px' });
+    const last = tourI === tourList.length - 1;
+    tip.innerHTML = `<div class="dots">${tourList.map((_, i) => `<i class="${i === tourI ? 'on' : ''}"></i>`).join('')}</div><h4>${s.t}</h4><p>${s.p}</p>
+      <div class="row"><button id="tSkip">跳過教學</button><span style="flex:1"></span>${tourI ? '<button id="tPrev">← 上一步</button>' : ''}<button class="pri" id="tNext">${last ? '開始使用' : '下一步 →'}</button></div>`;
+    // 框在下半部，說明放上面；框在上半部，說明放下面
+    const below = r.top + r.height / 2 < H / 2;
+    tip.style.top = below ? Math.min(H - 260, r.bottom + pad + 14) + 'px' : 'auto';
+    tip.style.bottom = below ? 'auto' : Math.max(12, H - r.top + pad + 14) + 'px';
+    $('tSkip').onclick = endTour;
+    if ($('tPrev')) $('tPrev').onclick = () => { tourI--; showTour(); };
+    $('tNext').onclick = () => { if (last) return endTour(); tourI++; showTour(); };
+  }, 120);
+}
+addEventListener('resize', () => { if (!$('tour').hidden) showTour(); });
 $('bCase2').onclick = () => newCaseSheet();
+setTimeout(() => { let done = false; try { done = !!localStorage.getItem(TOUR_KEY); } catch (e) {} if (!done) startTour(); }, 400);
 if (BETA) document.querySelector('header h1').insertAdjacentHTML('afterend', '<span class="badge" style="font-size:13px">試用版</span>');
 // 以前記的「新店機廠站新店機廠站…」整理成一個
 S.entries.forEach(e => { const f = fixLine(e.text); if (f !== e.text) { e.text = f; save(); } });
