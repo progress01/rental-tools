@@ -87,6 +87,7 @@ textarea.big{cursor:text}
 .tour .dots i{width:8px;height:8px;border-radius:9px;background:var(--line)}
 .tour .dots i.on{background:var(--accent)}
 @media (prefers-reduced-motion: reduce){.tour .hole{transition:none}}
+.backbtn{font-size:17px;padding:10px 16px;border-radius:12px;font-weight:700}
 .abar{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--card);border-top:1px solid var(--line);box-shadow:0 -4px 14px rgba(0,0,0,.06);padding:8px max(10px,env(safe-area-inset-left)) calc(8px + env(safe-area-inset-bottom));display:grid;grid-template-columns:1fr 1.4fr 1fr;gap:8px}
 .abar[hidden]{display:none}
 .abar button{font-size:17px;padding:13px 6px;border-radius:12px;font-weight:700}
@@ -128,7 +129,7 @@ details.tools summary{margin:4px 0;color:var(--ink);font-size:15px}
 </style>
 </head>
 <body>
-<header><h1>📝 工作日誌</h1><span class="hint" title="版本">v15・11/11</span><span style="flex:1"></span><button class="sm" id="bSet">⚙ 設定</button></header>
+<header><h1>📝 工作日誌</h1><span class="hint" title="版本">v16・11/12</span><span style="flex:1"></span><button class="sm" id="bSet">⚙ 設定</button></header>
 <div class="wrap">
   <div id="dash"></div>
   <div id="pending"></div>
@@ -220,7 +221,7 @@ function renderBuilder() {
     <textarea class="prev big" id="prev" rows="3" data-title="這一行">${esc(L)}</textarea><div class="tapedit">點一下會打開大字編輯</div>
     <div class="go"><button class="pri" id="gSave">✓ 記下來</button><button class="cal" id="gCal">📅 上日曆</button><button id="gMail">✉️ 寄信箱</button></div>
     <div class="hint">三個都會記到清單裡。上日曆、寄信箱會順便打開日曆或信箱。</div>`;
-  $('builder').innerHTML = `<div class="top"><div class="bar"><button class="sm" id="cX">✕ 取消</button><div class="steps">${STEPS.map((_, i) => `<i class="${i <= step ? 'on' : ''}"></i>`).join('')}</div></div>
+  $('builder').innerHTML = `<div class="top"><div class="bar"><button class="backbtn" id="cX">← 回首頁</button><div class="steps">${STEPS.map((_, i) => `<i class="${i <= step ? 'on' : ''}"></i>`).join('')}</div></div>
       <div class="live ${L ? '' : 'empty'}" id="live">${L ? esc(L) : '點選項，這裡會組出日曆要的那一行'}</div></div>
     <div class="body"><div class="q">${step + 1}. ${STEPS[step]}</div>${body}</div>
     ${step < 3 ? `<div class="foot">${step ? '<button id="cPrev">← 上一步</button>' : ''}<button class="pri" id="cNext">${step === 2 ? '下一步：看一下' : '下一步 →'}</button></div>` : `<div class="foot"><button id="cPrev">← 上一步</button></div>`}`;
@@ -229,7 +230,7 @@ function renderBuilder() {
 function liveUpdate() { const L = line(), el = $('live'); el.textContent = L || '點選項，這裡會組出日曆要的那一行'; el.classList.toggle('empty', !L); if ($('prev') && B.edited == null) $('prev').value = L; }
 function bindBuilder() {
   const box = $('builder'), re = () => { B.edited = null; renderBuilder(); }, on = (id, f) => { if ($(id)) $(id).onclick = f; };
-  on('cX', closeComposer);
+  on('cX', () => { if ((line() || B.edited) && !$('cX').dataset.s) { $('cX').dataset.s = 1; $('cX').textContent = '再按一次，不記了'; return; } closeComposer(); });
   on('cNext', () => { step++; renderBuilder(); });
   on('cPrev', () => { step--; renderBuilder(); });
   box.querySelectorAll('[data-bld]').forEach(b => b.onclick = () => { B.bld = B.bld === b.dataset.bld ? '' : b.dataset.bld; re(); if (B.bld) $('fl').focus(); });
@@ -698,7 +699,7 @@ let openCaseId = null;
 function openCase(id) {
   const c = caseOf(id); if (!c) return; openCaseId = id;
   const st = stepsOf(c), p = prog(c);
-  $('caseV').innerHTML = `<div class="top"><button class="sm" id="cvBack">← 回首頁</button><b style="flex:1;font-size:17px">📁 案子</b><b style="color:var(--accent)">${p.done}/${p.n}</b></div>
+  $('caseV').innerHTML = `<div class="top"><button class="pri backbtn" id="cvBack">← 回首頁</button><b style="flex:1;font-size:17px">📁 案子</b><b style="color:var(--accent)">${p.done}/${p.n}</b></div>
     <div class="body">
       <input id="cvT" value="${esc(c.title)}" style="font-size:20px;font-weight:900" placeholder="案子名稱，例：161號6樓之1 退租點交">
       <div class="pbar"><i style="width:${p.n ? Math.round(p.done / p.n * 100) : 0}%"></i></div>
@@ -817,6 +818,20 @@ const TOUR = [
 ];
 const TOUR_KEY = (BETA ? 'worklog-beta' : 'worklog') + '-tour-done';
 let tourI = 0, tourList = [];
+/* ============ 手機的「返回」：先關掉最上面的畫面，不會直接離開工作日誌 ============ */
+let guard = false;
+function ensureGuard() { if (!guard) { try { history.pushState({ wl: 1 }, ''); guard = true; } catch (e) {} } }
+const anyOpen = () => ['tour', 'bigEd', 'sheet', 'builder', 'caseV'].some(id => !$(id).hidden);
+new MutationObserver(() => { if (anyOpen()) ensureGuard(); }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['hidden'] });
+addEventListener('popstate', () => {
+  guard = false;
+  if (!$('tour').hidden) endTour();
+  else if (!$('bigEd').hidden) $('beX').click();
+  else if (!$('sheet').hidden) closeSheet();
+  else if (!$('builder').hidden) { if (step > 0) { step--; renderBuilder(); } else closeComposer(); }
+  else if (!$('caseV').hidden) closeCase();
+  if (anyOpen()) ensureGuard();
+});
 function startTour() {
   tourList = TOUR.filter(s => document.querySelector(s.el)); if (!tourList.length) return;
   tourI = 0; $('tour').hidden = false; showTour();
