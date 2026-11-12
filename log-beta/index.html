@@ -131,7 +131,7 @@ details.tools summary{margin:4px 0;color:var(--ink);font-size:15px}
 </style>
 </head>
 <body>
-<header><h1>📝 工作日誌</h1><span class="hint" title="版本">v17・11/12</span><span style="flex:1"></span><button class="sm" id="bSet">⚙ 設定</button></header>
+<header><h1>📝 工作日誌</h1><span class="hint" title="版本">v18・11/12</span><span style="flex:1"></span><button class="sm" id="bSet">⚙ 設定</button></header>
 <div class="wrap">
   <div id="dash"></div>
   <div id="pending"></div>
@@ -174,22 +174,28 @@ try { S = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { S = nul
 S = Object.assign({ conf: JSON.parse(JSON.stringify(DEF)), use: {}, entries: [], cases: [] }, S || {});
 if (!Array.isArray(S.cases)) S.cases = [];
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('⚠ 存不起來'); } };
+// 站／社區：第一層。每個站可以有自己的棟號（第二層），沒有的就直接打地址
+if (!Array.isArray(S.conf.sites) || !S.conf.sites.length) S.conf.sites = [{ name: S.conf.prefix || '新店機廠站', blds: ['153號', '161號'] }];
+const siteOf = n => S.conf.sites.find(s => s.name === n) || S.conf.sites[0];
+const siteNames = () => S.conf.sites.map(s => s.name);
 const used = (k, v) => { S.use[k + '|' + v] = (S.use[k + '|' + v] || 0) + 1; };
 const sorted = k => S.conf[k].slice().sort((a, b) => (S.use[k + '|' + b] || 0) - (S.use[k + '|' + a] || 0));
 
 // 正在組的這一行
 let B = blank();
-function blank() { return { cid: '', d: '', bld: '', fl: '', no: '', places: [], who: '', items: [], acts: [], mates: [], extra: '', edited: null, people: [] }; }
-function placeNow() { if (!B.bld) return ''; return B.bld + (B.fl ? `${B.fl}樓` : '') + (B.fl && B.no ? `之${B.no}` : ''); }
+function blank() { return { site: S.conf.lastSite && siteNames().includes(S.conf.lastSite) ? S.conf.lastSite : S.conf.sites[0].name, addr: '', cid: '', d: '', bld: '', fl: '', no: '', places: [], who: '', items: [], acts: [], mates: [], extra: '', edited: null, people: [] }; }
+function placeNow() { if (!(siteOf(B.site).blds || []).length) return B.addr.trim(); if (!B.bld) return ''; return B.bld + (B.fl ? `${B.fl}樓` : '') + (B.fl && B.no ? `之${B.no}` : ''); }
 function placesAll() { const p = placeNow(); return [...B.places, ...(p && !B.places.includes(p) ? [p] : [])]; }
 // 整理一行：開頭重複的「新店機廠站新店機廠站」只留一個
-function fixLine(s) { const P = S.conf.prefix; s = String(s || '').trim(); if (P) while (s.startsWith(P + P)) s = s.slice(P.length); return s; }
+function fixLine(s) { s = String(s || '').trim(); for (const P of siteNames()) if (P) while (s.startsWith(P + P)) s = s.slice(P.length); return s; }
 function line() {
   if (B.edited != null) return B.edited;
   const parts = [placesAll().join('、'), B.who, B.items.join('、'), [B.acts.join('、'), B.extra].filter(Boolean).join('，')].filter(Boolean);
   if (!parts.length) return '';
-  const P = S.conf.prefix, body = parts.join('，').replace(P ? new RegExp('^(' + P.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')+') : /^$/, '');
-  return P + body + '_' + [S.conf.me, ...B.mates].join('、');
+  const P = B.site || '', body = parts.join('，').replace(P ? new RegExp('^(' + P.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')+[，、]?') : /^$/, '');
+  // 棟號（153號…）直接接在站名後面；其他（管委會、某某社區的地址）中間加逗號
+  const join = !P ? '' : /^[0-9０-９A-Za-z]/.test(body) ? '' : '，';
+  return P + join + body + '_' + [S.conf.me, ...B.mates].join('、');
 }
 
 function chipRow(k, sel) {
@@ -203,14 +209,18 @@ function closeComposer() { $('builder').hidden = true; }
 function renderBuilder() {
   const L = line();
   let body = '';
-  if (step === 0) body = `
-    <div class="chips">${['153號', '161號'].map(b => `<button class="chip ${B.bld === b ? 'on' : ''}" data-bld="${b}" style="font-size:20px;padding:10px 22px">${b}</button>`).join('')}</div>
-    <div class="row" style="font-size:18px"><input class="num" id="fl" inputmode="numeric" enterkeyhint="next" placeholder="樓" value="${esc(B.fl)}" style="width:80px;font-size:20px"><span>樓 之</span><input class="num" id="no" inputmode="numeric" enterkeyhint="next" placeholder="" value="${esc(B.no)}" style="width:80px;font-size:20px"></div>
+  if (step === 0) { const site = siteOf(B.site), blds = site.blds || []; body = `
+    <div class="hint">哪個站／社區</div>
+    <div class="chips">${siteNames().map(n => `<button class="chip ${B.site === n ? 'on' : ''}" data-site="${esc(n)}" style="font-size:18px;padding:8px 16px">${esc(n)}</button>`).join('')}<button class="chip add" id="addSite">＋ 其他地方</button></div>
+    ${blds.length ? `<div class="hint">哪一棟、幾樓</div>
+    <div class="chips">${blds.map(b => `<button class="chip ${B.bld === b ? 'on' : ''}" data-bld="${esc(b)}" style="font-size:20px;padding:10px 22px">${esc(b)}</button>`).join('')}</div>
+    <div class="row" style="font-size:18px"><input class="num" id="fl" inputmode="numeric" enterkeyhint="next" placeholder="樓" value="${esc(B.fl)}" style="width:80px;font-size:20px"><span>樓 之</span><input class="num" id="no" inputmode="numeric" enterkeyhint="next" placeholder="" value="${esc(B.no)}" style="width:80px;font-size:20px"></div>`
+    : `<div class="hint">地址或戶號（可不填）</div><input id="addr" enterkeyhint="next" placeholder="例：A棟5樓、中正路100號" value="${esc(B.addr)}">`}
     <div><button class="sm" id="morePlace">＋ 同一行再加一戶</button></div>
     ${B.places.length ? `<div class="chips">${B.places.map((p, i) => `<button class="chip on" data-rmp="${i}">${esc(p)} ✕</button>`).join('')}</div>` : ''}
     <div class="hint">或是：</div>
     <div class="chips">${sorted('places').map(v => `<button class="chip ${B.places.includes(v) ? 'on' : ''}" data-plc="${esc(v)}">${esc(v)}</button>`).join('')}<button class="chip add" data-addk="places">＋ 其他</button></div>
-    <div class="hint">對象（可不填）</div><input id="who" enterkeyhint="next" placeholder="例：陳小姐、某某公司、車位 B2-B016" value="${esc(B.who)}">`;
+    <div class="hint">對象（可不填）</div><input id="who" enterkeyhint="next" placeholder="例：陳小姐、某某公司、車位 B2-B016" value="${esc(B.who)}">`; }
   else if (step === 1) body = `<div class="hint">可以選好幾個</div>${chipRow('items', B.items)}`;
   else if (step === 2) body = `<div class="hint">可以選好幾個</div>${chipRow('acts', B.acts)}
     <div class="hint">補充（可不填）</div><input id="extra" enterkeyhint="next" placeholder="例：約5/18上午9:30" value="${esc(B.extra)}">`;
@@ -235,11 +245,14 @@ function bindBuilder() {
   on('cX', () => { if ((line() || B.edited) && !$('cX').dataset.s) { $('cX').dataset.s = 1; $('cX').textContent = '再按一次，不記了'; return; } closeComposer(); });
   on('cNext', () => { step++; renderBuilder(); });
   on('cPrev', () => { step--; renderBuilder(); });
+  box.querySelectorAll('[data-site]').forEach(b => b.onclick = () => { if (B.site !== b.dataset.site) { B.site = b.dataset.site; B.bld = ''; B.fl = ''; B.no = ''; B.addr = ''; S.conf.lastSite = B.site; save(); } re(); });
+  on('addSite', () => siteSheet());
+  if ($('addr')) $('addr').oninput = ev => { B.addr = ev.target.value; B.edited = null; liveUpdate(); };
   box.querySelectorAll('[data-bld]').forEach(b => b.onclick = () => { B.bld = B.bld === b.dataset.bld ? '' : b.dataset.bld; re(); if (B.bld) $('fl').focus(); });
   // 打字時只更新上面那一行，不重畫，才不會打到一半跳掉
   if ($('fl')) $('fl').oninput = ev => { B.fl = ev.target.value.replace(/\D/g, ''); B.edited = null; liveUpdate(); };
   if ($('no')) $('no').oninput = ev => { B.no = ev.target.value.replace(/\D/g, ''); B.edited = null; liveUpdate(); };
-  on('morePlace', () => { const p = placeNow(); if (!p) return toast('先選 153號／161號 和樓層'); if (!B.places.includes(p)) B.places.push(p); B.fl = ''; B.no = ''; re(); $('fl').focus(); });
+  on('morePlace', () => { const p = placeNow(); if (!p) return toast((siteOf(B.site).blds || []).length ? '先選哪一棟和樓層' : '先打地址或戶號'); if (!B.places.includes(p)) B.places.push(p); B.fl = ''; B.no = ''; B.addr = ''; re(); ($('fl') || $('addr')).focus(); });
   box.querySelectorAll('[data-rmp]').forEach(b => b.onclick = () => { B.places.splice(+b.dataset.rmp, 1); re(); });
   box.querySelectorAll('[data-plc]').forEach(b => b.onclick = () => { const v = b.dataset.plc; B.places.includes(v) ? B.places.splice(B.places.indexOf(v), 1) : B.places.push(v); re(); });
   if ($('who')) $('who').oninput = () => { B.who = $('who').value.trim(); B.edited = null; liveUpdate(); };
@@ -252,6 +265,7 @@ function bindBuilder() {
   const nextOnEnter = (id, go) => { const el = $(id); if (el) el.onkeydown = ev => { if (ev.isComposing || ev.keyCode === 229) return; if (ev.key === 'Enter' || ev.keyCode === 13) { ev.preventDefault(); go(); } }; };
   nextOnEnter('fl', () => $('no').focus());
   nextOnEnter('no', () => $('who').focus());
+  nextOnEnter('addr', () => $('who').focus());
   nextOnEnter('who', () => { step++; renderBuilder(); });
   nextOnEnter('extra', () => { step++; renderBuilder(); });
   // 2 位數的樓層打完自動跳到「之」
@@ -424,11 +438,11 @@ function setSheet(msg) {
     <button id="sTour">📖 再看一次操作教學</button>
     <div class="lbl">字的大小</div>
     <div class="chips" id="sZ">${[[1, '標準'], [1.15, '大'], [1.3, '特大']].map(([z, n]) => `<button class="chip ${(c.zoom || 1) === z ? 'on' : ''}" data-z="${z}">${n}</button>`).join('')}</div>
-    <div class="lbl">每一行開頭</div><input id="sP" value="${esc(c.prefix)}">
+    <div class="lbl">預設的開頭（第一個站／社區的名稱）</div><input id="sP" value="${esc(c.prefix)}">
     <div class="lbl">自己的署名（加在 _ 後面）</div><input id="sM" value="${esc(c.me)}">
     <div class="lbl">「寄信箱」寄到哪裡</div><input id="sE" type="email" value="${esc(c.email)}" placeholder="例：自己的 Gmail">
     
-    <button id="sOpts">🔧 管理按鈕選項（地點、事項、做了什麼、一起的人）</button>
+    <button id="sOpts">🔧 管理按鈕選項（站／社區、地點、事項、做了什麼、一起的人）</button>
     <button id="sFav">⭐ 管理常用</button>
     <div class="row" style="justify-content:flex-end"><button onclick="closeSheet()">取消</button><button class="pri" id="sOk">儲存</button></div>
     <hr style="border:0;border-top:1px solid var(--line);width:100%">
@@ -449,7 +463,7 @@ function setSheet(msg) {
   $('sTour').onclick = () => { closeSheet(); startTour(); };
   $('sOpts').onclick = () => optsSheet('items'); $('sFav').onclick = favSheet;
   $('sZ').querySelectorAll('[data-z]').forEach(b => b.onclick = () => { c.zoom = +b.dataset.z; save(); applyZoom(); $('sZ').querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === b)); });
-  $('sOk').onclick = () => { c.prefix = $('sP').value.trim(); c.me = $('sM').value.trim() || '毅'; c.email = $('sE').value.trim();
+  $('sOk').onclick = () => { const np = $('sP').value.trim(); if (np && c.sites[0] && c.sites[0].name === c.prefix) c.sites[0].name = np; c.prefix = np; c.me = $('sM').value.trim() || '毅'; c.email = $('sE').value.trim();
 
     save(); closeSheet(); toast('已儲存'); };
 }
@@ -542,6 +556,7 @@ function pplEditor(box, arr) {
 function fieldsOf(e) {
   if (e.f) return { place: e.f.place, who: e.f.who, items: e.f.items, acts: e.f.acts, mates: e.f.mates };
   let s = e.text.replace(/^新店機廠站?[，,、]?/, ''), mates = '';
+  for (const n of siteNames()) if (s.startsWith(n)) { s = s.slice(n.length).replace(/^[，,、]/, ''); break; }
   const u = s.lastIndexOf('_'); if (u >= 0) { mates = s.slice(u + 1).split(/[、,，]/).filter(x => x && x !== S.conf.me).join('、'); s = s.slice(0, u); }
   const parts = s.split(/[，,]/).map(x => x.trim()).filter(Boolean);
   // 開頭連續的地點（153號14樓之23、21樓之15、空屋…），用「、」分開的都算
@@ -638,15 +653,36 @@ function favSheet() {
   document.querySelectorAll('[data-pk]').forEach(b => b.onclick = () => { L.push({ id: uid(), text: b.dataset.pk }); redraw(); });
 }
 // 🔧 管理按鈕選項：一類一頁，選項是一顆一顆的，✕ 刪掉、下面加新的
+// 站／社區：新增、刪除、設定每個站的棟號（用、分開；不填＝直接打地址）
+function siteSheet() {
+  const L = S.conf.sites;
+  openSheet(`<h3 style="margin:0">📍 站／社區</h3>
+    <div class="hint">每個地方可以設定自己的棟號（例：153號、161號），用「、」分開；不填的話，記一筆時就直接打地址。選哪個地方，那一行的開頭就換成它。</div>
+    <div id="stL" style="display:flex;flex-direction:column;gap:8px">${L.map((s, i) => `<div class="entry"><b style="font-size:17px">${esc(s.name)}</b>
+      <div class="row"><span class="hint">棟號</span><input data-sb="${i}" value="${esc((s.blds || []).join('、'))}" placeholder="不填＝直接打地址" style="flex:1"></div>
+      <div class="acts"><span style="flex:1"></span>${L.length > 1 ? `<button class="sm" data-srm="${i}" style="color:#b0392b">✕ 刪掉</button>` : ''}</div></div>`).join('')}</div>
+    <div class="lbl">新增一個地方</div>
+    <input id="stN" placeholder="名稱，例：美麗景安社區、南勢角站">
+    <input id="stB" placeholder="棟號（可不填），例：A棟、B棟">
+    <div class="row" style="justify-content:flex-end"><button class="pri" id="stAdd">＋ 加入</button></div>
+    <div class="row" style="justify-content:flex-end"><button onclick="closeSheet()">完成</button></div>`);
+  const split = v => [...new Set(v.split(/[、,，\s]+/).map(x => x.trim()).filter(Boolean))];
+  document.querySelectorAll('[data-sb]').forEach(i => i.onchange = () => { L[+i.dataset.sb].blds = split(i.value); save(); if (!$('builder').hidden) renderBuilder(); });
+  document.querySelectorAll('[data-srm]').forEach(b => b.onclick = () => { if (!b.dataset.s) { b.dataset.s = 1; b.textContent = '再按一次刪掉'; return; } L.splice(+b.dataset.srm, 1); save(); if (!siteNames().includes(B.site)) B.site = L[0].name; siteSheet(); if (!$('builder').hidden) renderBuilder(); });
+  $('stAdd').onclick = () => { const n = $('stN').value.trim(); if (!n) return toast('請寫地方名稱'); if (siteNames().includes(n)) return toast('已經有這個地方了');
+    L.push({ name: n, blds: split($('stB').value) }); save(); toast('已加入「' + n + '」');
+    if (!$('builder').hidden) { B.site = n; B.bld = ''; B.addr = ''; S.conf.lastSite = n; closeSheet(); renderBuilder(); } else siteSheet(); };
+}
 function optsSheet(k) {
-  const N = { places: '地點', items: '事項', acts: '做了什麼', mates: '一起的人' };
+  const N = { places: '其他地點', items: '事項', acts: '做了什麼', mates: '一起的人' };
   openSheet(`<h3 style="margin:0">🔧 管理按鈕選項</h3>
-    <div class="chips">${Object.entries(N).map(([kk, n]) => `<button class="chip ${kk === k ? 'on' : ''}" data-ok2="${kk}">${n}</button>`).join('')}</div>
+    <div class="chips"><button class="chip" id="opSite">📍 站／社區</button>${Object.entries(N).map(([kk, n]) => `<button class="chip ${kk === k ? 'on' : ''}" data-ok2="${kk}">${n}</button>`).join('')}</div>
     <div class="hint">點 ✕ 刪掉；「${N[k]}」的按鈕會照常用的次數排序。</div>
     <div class="chips">${S.conf[k].map((v, i) => `<button class="chip" data-rmo="${i}">${esc(v)} ✕</button>`).join('') || '<span class="hint">沒有選項</span>'}</div>
     <div class="row"><input id="opNew" placeholder="新增一個${N[k]}" style="flex:1"><button class="pri" id="opAdd">加</button></div>
     <div class="row" style="justify-content:flex-end"><button onclick="setSheet()">回設定</button><button class="pri" onclick="closeSheet()">完成</button></div>`);
   document.querySelectorAll('[data-ok2]').forEach(b => b.onclick = () => optsSheet(b.dataset.ok2));
+  $('opSite').onclick = siteSheet;
   document.querySelectorAll('[data-rmo]').forEach(b => b.onclick = () => { S.conf[k].splice(+b.dataset.rmo, 1); save(); optsSheet(k); });
   const add = () => { const v = $('opNew').value.trim(); if (!v) return; if (!S.conf[k].includes(v)) S.conf[k].push(v); save(); optsSheet(k); toast('已加入'); };
   $('opAdd').onclick = add; $('opNew').onkeydown = ev => { if (ev.isComposing || ev.keyCode === 229) return; if (ev.key === 'Enter') { ev.preventDefault(); add(); } };
@@ -684,7 +720,7 @@ function caseCard(c) {
   const p = prog(c), nx = nextStep(c), pct = p.n ? Math.round(p.done / p.n * 100) : 0;
   return `<div class="cs" data-case="${c.id}"><div class="row"><span class="tt" style="flex:1">📁 ${esc(c.title)}</span><b style="color:var(--accent)">${p.done}/${p.n}</b></div>
     <div class="pbar"><i style="width:${pct}%"></i></div>
-    <div class="hint">${caseDone(c) ? '✓ 全部做完了' : nx ? `下一步：${md(nx.d)}（${wd(nx.d)}）${esc(nx.text.replace(S.conf.prefix, '').replace(/_[^_]*$/, ''))}` : '還沒有步驟，點進去加'}</div></div>`;
+    <div class="hint">${caseDone(c) ? '✓ 全部做完了' : nx ? `下一步：${md(nx.d)}（${wd(nx.d)}）${esc(siteNames().reduce((s, n) => s.replace(n, ''), nx.text).replace(/^，/, '').replace(/_[^_]*$/, ''))}` : '還沒有步驟，點進去加'}</div></div>`;
 }
 function renderCases() {
   const open = S.cases.filter(c => !caseDone(c)), done = S.cases.filter(caseDone);
