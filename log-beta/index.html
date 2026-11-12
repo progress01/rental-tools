@@ -117,6 +117,8 @@ details.tools summary{margin:4px 0;color:var(--ink);font-size:15px}
 .comp .steps{display:flex;gap:4px;flex:1}
 .comp .steps i{flex:1;height:5px;border-radius:9px;background:var(--line)}
 .comp .steps i.on{background:var(--accent)}
+/* 記一筆每一頁的內容不要被壓扁（最後一步的「這一行」原本會被吃掉），太長就往下捲 */
+.comp .body > *{flex-shrink:0}
 .comp .body{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:12px;max-width:720px;width:100%;margin:0 auto}
 .comp .q{font-size:20px;font-weight:900}
 .comp .foot{background:var(--card);border-top:1px solid var(--line);padding:10px 14px calc(10px + env(safe-area-inset-bottom));display:flex;gap:8px}
@@ -129,7 +131,7 @@ details.tools summary{margin:4px 0;color:var(--ink);font-size:15px}
 </style>
 </head>
 <body>
-<header><h1>📝 工作日誌</h1><span class="hint" title="版本">v16・11/12</span><span style="flex:1"></span><button class="sm" id="bSet">⚙ 設定</button></header>
+<header><h1>📝 工作日誌</h1><span class="hint" title="版本">v17・11/12</span><span style="flex:1"></span><button class="sm" id="bSet">⚙ 設定</button></header>
 <div class="wrap">
   <div id="dash"></div>
   <div id="pending"></div>
@@ -218,13 +220,13 @@ function renderBuilder() {
     <div class="hint">一起的人（可不選）</div>${chipRow('mates', B.mates)}
     <div class="hint">這件事要聯絡的人（可不填，只存在這筆，不會寫進日曆）</div><div id="pplBox"></div>
     <div class="hint">這一行（可以直接改字）${B.edited != null ? ' <button class="link" id="unedit">照選的重組</button>' : ''}</div>
-    <textarea class="prev big" id="prev" rows="3" data-title="這一行">${esc(L)}</textarea><div class="tapedit">點一下會打開大字編輯</div>
+    <textarea class="prev big" id="prev" rows="3" style="min-height:96px" data-title="這一行">${esc(L)}</textarea><div class="tapedit">點一下會打開大字編輯</div>
     <div class="go"><button class="pri" id="gSave">✓ 記下來</button><button class="cal" id="gCal">📅 上日曆</button><button id="gMail">✉️ 寄信箱</button></div>
     <div class="hint">三個都會記到清單裡。上日曆、寄信箱會順便打開日曆或信箱。</div>`;
   $('builder').innerHTML = `<div class="top"><div class="bar"><button class="backbtn" id="cX">← 回首頁</button><div class="steps">${STEPS.map((_, i) => `<i class="${i <= step ? 'on' : ''}"></i>`).join('')}</div></div>
       <div class="live ${L ? '' : 'empty'}" id="live">${L ? esc(L) : '點選項，這裡會組出日曆要的那一行'}</div></div>
     <div class="body"><div class="q">${step + 1}. ${STEPS[step]}</div>${body}</div>
-    ${step < 3 ? `<div class="foot">${step ? '<button id="cPrev">← 上一步</button>' : ''}<button class="pri" id="cNext">${step === 2 ? '下一步：看一下' : '下一步 →'}</button></div>` : `<div class="foot"><button id="cPrev">← 上一步</button></div>`}`;
+    ${step < 3 ? `<div class="foot">${step ? '<button id="cPrev">← 上一步</button>' : ''}<button class="pri" id="cNext">${step === 2 ? '下一步：看一下' : '下一步 →'}</button></div>` : `<div class="foot"><button id="cPrev" style="flex:1">← 上一步</button><button class="pri" id="gSave2" style="flex:2">✓ 記下來</button></div>`}`;
   bindBuilder();
 }
 function liveUpdate() { const L = line(), el = $('live'); el.textContent = L || '點選項，這裡會組出日曆要的那一行'; el.classList.toggle('empty', !L); if ($('prev') && B.edited == null) $('prev').value = L; }
@@ -257,6 +259,7 @@ function bindBuilder() {
   if ($('pplBox')) pplEditor($('pplBox'), B.people);
   if ($('cD')) $('cD').onchange = () => { B.d = $('cD').value; };
   on('gSave', () => commit());
+  on('gSave2', () => commit());
   on('gCal', () => { const e = commit(true); if (e) calSheet(e); });
   on('gMail', () => { const e = commit(true); if (e) mailSheet(e); });
 }
