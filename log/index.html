@@ -14,7 +14,7 @@
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif}
 header{position:sticky;top:0;z-index:5;background:var(--card);border-bottom:1px solid var(--line);padding:10px 14px;display:flex;align-items:center;gap:10px}
 h1{font-size:19px;margin:0}
-.wrap{max-width:720px;margin:0 auto;padding:12px 14px 100px}
+.wrap{max-width:720px;margin:0 auto;padding:12px 14px 120px}
 h2{font-size:14px;color:var(--muted);margin:18px 0 6px;letter-spacing:.05em}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:10px}
 .lbl{font-size:13px;color:var(--muted);display:flex;justify-content:space-between;align-items:center}
@@ -76,9 +76,40 @@ button.del{background:#b0392b;border-color:#b0392b;color:#fff;font-weight:700}
 .bigEd textarea{flex:1;border:0;border-radius:0;font-size:22px;line-height:1.7;padding:14px 16px;resize:none;background:var(--card)}
 textarea.big{cursor:text}
 .tapedit{font-size:13px;color:var(--muted);margin-top:-4px}
+.tour{position:fixed;inset:0;z-index:60}
+.tour[hidden]{display:none}
+.tour .hole{position:fixed;border-radius:14px;box-shadow:0 0 0 9999px rgba(15,20,18,.62);outline:3px solid #ffd76a;transition:all .25s;pointer-events:none}
+.tour .tip{position:fixed;left:12px;right:12px;max-width:520px;margin:0 auto;background:#fff;border-radius:16px;padding:16px;box-shadow:0 10px 30px rgba(0,0,0,.25);display:flex;flex-direction:column;gap:10px}
+.tour .tip h4{margin:0;font-size:20px}
+.tour .tip p{margin:0;font-size:17px;line-height:1.6}
+.tour .tip .row button{font-size:17px;padding:11px 16px}
+.tour .dots{display:flex;gap:5px}
+.tour .dots i{width:8px;height:8px;border-radius:9px;background:var(--line)}
+.tour .dots i.on{background:var(--accent)}
+@media (prefers-reduced-motion: reduce){.tour .hole{transition:none}}
+.backbtn{font-size:17px;padding:10px 16px;border-radius:12px;font-weight:700}
+.abar{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--card);border-top:1px solid var(--line);box-shadow:0 -4px 14px rgba(0,0,0,.06);padding:8px max(10px,env(safe-area-inset-left)) calc(8px + env(safe-area-inset-bottom));display:grid;grid-template-columns:1fr 1.4fr 1fr;gap:8px}
+.abar[hidden]{display:none}
+.abar button{font-size:17px;padding:13px 6px;border-radius:12px;font-weight:700}
+details.tools{margin-top:10px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px 12px}
+details.tools summary{margin:4px 0;color:var(--ink);font-size:15px}
 .fab{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom));z-index:6;font-size:19px;padding:14px 34px;border-radius:999px;box-shadow:0 6px 18px rgba(0,0,0,.18)}
 .intro{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:8px;margin-top:6px}
 .intro .ex{background:var(--accent-soft);border-radius:10px;padding:10px 12px;font-weight:700}
+.caseV{position:fixed;inset:0;z-index:14;background:var(--bg);display:flex;flex-direction:column}
+.caseV[hidden]{display:none}
+.caseV .top{background:var(--card);border-bottom:1px solid var(--line);padding:10px 14px;display:flex;gap:8px;align-items:center}
+.caseV .body > *{flex-shrink:0}
+.caseV .body{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px;max-width:720px;width:100%;margin:0 auto}
+.cs{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:6px;cursor:pointer}
+.cs .tt{font-size:17px;font-weight:900}
+.pbar{height:8px;border-radius:99px;background:var(--bg);border:1px solid var(--line);overflow:hidden}
+.pbar i{display:block;height:100%;background:var(--accent)}
+.stp{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:grid;grid-template-columns:40px 1fr;gap:10px;align-items:start}
+.stp.done{opacity:.65}
+.stp .ck{width:36px;height:36px;border-radius:10px;border:2px solid var(--line);background:#fff;font-size:20px;color:#fff;padding:0}
+.stp.done .ck{background:var(--accent);border-color:var(--accent)}
+.casechip{font-size:13px;color:var(--accent);background:var(--accent-soft);border-radius:8px;padding:2px 8px;border:0;cursor:pointer;align-self:flex-start}
 .comp{position:fixed;inset:0;z-index:15;background:var(--bg);display:flex;flex-direction:column}
 .comp[hidden]{display:none}
 .comp .top{background:var(--card);border-bottom:1px solid var(--line);padding:10px 14px calc(10px);display:flex;flex-direction:column;gap:8px}
@@ -86,6 +117,8 @@ textarea.big{cursor:text}
 .comp .steps{display:flex;gap:4px;flex:1}
 .comp .steps i{flex:1;height:5px;border-radius:9px;background:var(--line)}
 .comp .steps i.on{background:var(--accent)}
+/* 記一筆每一頁的內容不要被壓扁（最後一步的「這一行」原本會被吃掉），太長就往下捲 */
+.comp .body > *{flex-shrink:0}
 .comp .body{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:12px;max-width:720px;width:100%;margin:0 auto}
 .comp .q{font-size:20px;font-weight:900}
 .comp .foot{background:var(--card);border-top:1px solid var(--line);padding:10px 14px calc(10px + env(safe-area-inset-bottom));display:flex;gap:8px}
@@ -98,15 +131,18 @@ textarea.big{cursor:text}
 </style>
 </head>
 <body>
-<header><h1>📝 工作日誌</h1><span class="hint" title="版本">v12・11/6</span><span style="flex:1"></span><button class="sm" id="bSet">⚙ 設定</button></header>
+<header><h1>📝 工作日誌</h1><span class="hint" title="版本">v18・11/12</span><span style="flex:1"></span><button class="sm" id="bSet">⚙ 設定</button></header>
 <div class="wrap">
   <div id="dash"></div>
   <div id="pending"></div>
+  <div id="cases"></div>
   <div id="days"></div>
   <div id="again"></div>
 </div>
-<button class="pri fab" id="bNew">＋ 記一筆</button>
+<div class="abar" id="abar"><button id="bPaste">📋 貼上</button><button class="pri" id="bNew">＋ 記一筆</button><button id="bCase2">📁 開案子</button></div>
+<div class="tour" id="tour" hidden><div class="hole" id="tourHole"></div><div class="tip" id="tourTip"></div></div>
 <div class="selbar" id="selbar" hidden><span id="selN" style="flex:1">已選 0 筆</span><button id="selCancel">取消</button><button class="del" id="selDel" disabled>🗑 刪除</button></div>
+<div class="caseV" id="caseV" hidden></div>
 <div class="comp" id="builder" hidden></div>
 <div class="bigEd" id="bigEd" hidden><div class="bar"><button id="beX">取消</button><b id="beT"></b><button class="pri" id="beOk">✓ 好了</button></div><textarea id="beTa"></textarea></div>
 <div class="sheet" id="sheet" hidden><div class="box" id="box"></div></div>
@@ -131,27 +167,35 @@ const DEF = {
   acts: ['現勘', '聯絡通知', '聯絡廠商、訂料', '安排時間', '修繕', '貼單通知', '投遞', '取回', '簽認', '文件整理', '照片整理、彙送', '巡檢', '電話催打、簡訊發送'],
   mates: ['德哥', '福興小胖', 'AMY']
 };
-const KEY = 'worklog-v1';
+const BETA = /log-beta/.test(location.pathname);
+const KEY = BETA ? 'worklog-beta' : 'worklog-v1';
 let S;
 try { S = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { S = null; }
-S = Object.assign({ conf: JSON.parse(JSON.stringify(DEF)), use: {}, entries: [] }, S || {});
+S = Object.assign({ conf: JSON.parse(JSON.stringify(DEF)), use: {}, entries: [], cases: [] }, S || {});
+if (!Array.isArray(S.cases)) S.cases = [];
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('⚠ 存不起來'); } };
+// 站／社區：第一層。每個站可以有自己的棟號（第二層），沒有的就直接打地址
+if (!Array.isArray(S.conf.sites) || !S.conf.sites.length) S.conf.sites = [{ name: S.conf.prefix || '新店機廠站', blds: ['153號', '161號'] }];
+const siteOf = n => S.conf.sites.find(s => s.name === n) || S.conf.sites[0];
+const siteNames = () => S.conf.sites.map(s => s.name);
 const used = (k, v) => { S.use[k + '|' + v] = (S.use[k + '|' + v] || 0) + 1; };
 const sorted = k => S.conf[k].slice().sort((a, b) => (S.use[k + '|' + b] || 0) - (S.use[k + '|' + a] || 0));
 
 // 正在組的這一行
 let B = blank();
-function blank() { return { bld: '', fl: '', no: '', places: [], who: '', items: [], acts: [], mates: [], extra: '', edited: null, people: [] }; }
-function placeNow() { if (!B.bld) return ''; return B.bld + (B.fl ? `${B.fl}樓` : '') + (B.fl && B.no ? `之${B.no}` : ''); }
+function blank() { return { site: S.conf.lastSite && siteNames().includes(S.conf.lastSite) ? S.conf.lastSite : S.conf.sites[0].name, addr: '', cid: '', d: '', bld: '', fl: '', no: '', places: [], who: '', items: [], acts: [], mates: [], extra: '', edited: null, people: [] }; }
+function placeNow() { if (!(siteOf(B.site).blds || []).length) return B.addr.trim(); if (!B.bld) return ''; return B.bld + (B.fl ? `${B.fl}樓` : '') + (B.fl && B.no ? `之${B.no}` : ''); }
 function placesAll() { const p = placeNow(); return [...B.places, ...(p && !B.places.includes(p) ? [p] : [])]; }
 // 整理一行：開頭重複的「新店機廠站新店機廠站」只留一個
-function fixLine(s) { const P = S.conf.prefix; s = String(s || '').trim(); if (P) while (s.startsWith(P + P)) s = s.slice(P.length); return s; }
+function fixLine(s) { s = String(s || '').trim(); for (const P of siteNames()) if (P) while (s.startsWith(P + P)) s = s.slice(P.length); return s; }
 function line() {
   if (B.edited != null) return B.edited;
   const parts = [placesAll().join('、'), B.who, B.items.join('、'), [B.acts.join('、'), B.extra].filter(Boolean).join('，')].filter(Boolean);
   if (!parts.length) return '';
-  const P = S.conf.prefix, body = parts.join('，').replace(P ? new RegExp('^(' + P.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')+') : /^$/, '');
-  return P + body + '_' + [S.conf.me, ...B.mates].join('、');
+  const P = B.site || '', body = parts.join('，').replace(P ? new RegExp('^(' + P.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')+[，、]?') : /^$/, '');
+  // 棟號（153號…）直接接在站名後面；其他（管委會、某某社區的地址）中間加逗號
+  const join = !P ? '' : /^[0-9０-９A-Za-z]/.test(body) ? '' : '，';
+  return P + join + body + '_' + [S.conf.me, ...B.mates].join('、');
 }
 
 function chipRow(k, sel) {
@@ -165,41 +209,50 @@ function closeComposer() { $('builder').hidden = true; }
 function renderBuilder() {
   const L = line();
   let body = '';
-  if (step === 0) body = `
-    <div class="chips">${['153號', '161號'].map(b => `<button class="chip ${B.bld === b ? 'on' : ''}" data-bld="${b}" style="font-size:20px;padding:10px 22px">${b}</button>`).join('')}</div>
-    <div class="row" style="font-size:18px"><input class="num" id="fl" inputmode="numeric" enterkeyhint="next" placeholder="樓" value="${esc(B.fl)}" style="width:80px;font-size:20px"><span>樓 之</span><input class="num" id="no" inputmode="numeric" enterkeyhint="next" placeholder="" value="${esc(B.no)}" style="width:80px;font-size:20px"></div>
+  if (step === 0) { const site = siteOf(B.site), blds = site.blds || []; body = `
+    <div class="hint">哪個站／社區</div>
+    <div class="chips">${siteNames().map(n => `<button class="chip ${B.site === n ? 'on' : ''}" data-site="${esc(n)}" style="font-size:18px;padding:8px 16px">${esc(n)}</button>`).join('')}<button class="chip add" id="addSite">＋ 其他地方</button></div>
+    ${blds.length ? `<div class="hint">哪一棟、幾樓</div>
+    <div class="chips">${blds.map(b => `<button class="chip ${B.bld === b ? 'on' : ''}" data-bld="${esc(b)}" style="font-size:20px;padding:10px 22px">${esc(b)}</button>`).join('')}</div>
+    <div class="row" style="font-size:18px"><input class="num" id="fl" inputmode="numeric" enterkeyhint="next" placeholder="樓" value="${esc(B.fl)}" style="width:80px;font-size:20px"><span>樓 之</span><input class="num" id="no" inputmode="numeric" enterkeyhint="next" placeholder="" value="${esc(B.no)}" style="width:80px;font-size:20px"></div>`
+    : `<div class="hint">地址或戶號（可不填）</div><input id="addr" enterkeyhint="next" placeholder="例：A棟5樓、中正路100號" value="${esc(B.addr)}">`}
     <div><button class="sm" id="morePlace">＋ 同一行再加一戶</button></div>
     ${B.places.length ? `<div class="chips">${B.places.map((p, i) => `<button class="chip on" data-rmp="${i}">${esc(p)} ✕</button>`).join('')}</div>` : ''}
     <div class="hint">或是：</div>
     <div class="chips">${sorted('places').map(v => `<button class="chip ${B.places.includes(v) ? 'on' : ''}" data-plc="${esc(v)}">${esc(v)}</button>`).join('')}<button class="chip add" data-addk="places">＋ 其他</button></div>
-    <div class="hint">對象（可不填）</div><input id="who" enterkeyhint="next" placeholder="例：陳小姐、某某公司、車位 B2-B016" value="${esc(B.who)}">`;
+    <div class="hint">對象（可不填）</div><input id="who" enterkeyhint="next" placeholder="例：陳小姐、某某公司、車位 B2-B016" value="${esc(B.who)}">`; }
   else if (step === 1) body = `<div class="hint">可以選好幾個</div>${chipRow('items', B.items)}`;
   else if (step === 2) body = `<div class="hint">可以選好幾個</div>${chipRow('acts', B.acts)}
     <div class="hint">補充（可不填）</div><input id="extra" enterkeyhint="next" placeholder="例：約5/18上午9:30" value="${esc(B.extra)}">`;
   else body = `
+    ${B.cid ? `<div class="casechip">📁 加到案子：${esc((caseOf(B.cid) || {}).title || '')}</div>` : ''}
+    <div class="row"><span class="hint">哪一天</span><input type="date" id="cD" value="${B.d || today()}" style="width:auto"><span class="hint">（之後要做的就選那天）</span></div>
     <div class="hint">一起的人（可不選）</div>${chipRow('mates', B.mates)}
     <div class="hint">這件事要聯絡的人（可不填，只存在這筆，不會寫進日曆）</div><div id="pplBox"></div>
     <div class="hint">這一行（可以直接改字）${B.edited != null ? ' <button class="link" id="unedit">照選的重組</button>' : ''}</div>
-    <textarea class="prev big" id="prev" rows="3" data-title="這一行">${esc(L)}</textarea><div class="tapedit">點一下會打開大字編輯</div>
+    <textarea class="prev big" id="prev" rows="3" style="min-height:96px" data-title="這一行">${esc(L)}</textarea><div class="tapedit">點一下會打開大字編輯</div>
     <div class="go"><button class="pri" id="gSave">✓ 記下來</button><button class="cal" id="gCal">📅 上日曆</button><button id="gMail">✉️ 寄信箱</button></div>
     <div class="hint">三個都會記到清單裡。上日曆、寄信箱會順便打開日曆或信箱。</div>`;
-  $('builder').innerHTML = `<div class="top"><div class="bar"><button class="sm" id="cX">✕ 取消</button><div class="steps">${STEPS.map((_, i) => `<i class="${i <= step ? 'on' : ''}"></i>`).join('')}</div></div>
+  $('builder').innerHTML = `<div class="top"><div class="bar"><button class="backbtn" id="cX">← 回首頁</button><div class="steps">${STEPS.map((_, i) => `<i class="${i <= step ? 'on' : ''}"></i>`).join('')}</div></div>
       <div class="live ${L ? '' : 'empty'}" id="live">${L ? esc(L) : '點選項，這裡會組出日曆要的那一行'}</div></div>
     <div class="body"><div class="q">${step + 1}. ${STEPS[step]}</div>${body}</div>
-    ${step < 3 ? `<div class="foot">${step ? '<button id="cPrev">← 上一步</button>' : ''}<button class="pri" id="cNext">${step === 2 ? '下一步：看一下' : '下一步 →'}</button></div>` : `<div class="foot"><button id="cPrev">← 上一步</button></div>`}`;
+    ${step < 3 ? `<div class="foot">${step ? '<button id="cPrev">← 上一步</button>' : ''}<button class="pri" id="cNext">${step === 2 ? '下一步：看一下' : '下一步 →'}</button></div>` : `<div class="foot"><button id="cPrev" style="flex:1">← 上一步</button><button class="pri" id="gSave2" style="flex:2">✓ 記下來</button></div>`}`;
   bindBuilder();
 }
 function liveUpdate() { const L = line(), el = $('live'); el.textContent = L || '點選項，這裡會組出日曆要的那一行'; el.classList.toggle('empty', !L); if ($('prev') && B.edited == null) $('prev').value = L; }
 function bindBuilder() {
   const box = $('builder'), re = () => { B.edited = null; renderBuilder(); }, on = (id, f) => { if ($(id)) $(id).onclick = f; };
-  on('cX', closeComposer);
+  on('cX', () => { if ((line() || B.edited) && !$('cX').dataset.s) { $('cX').dataset.s = 1; $('cX').textContent = '再按一次，不記了'; return; } closeComposer(); });
   on('cNext', () => { step++; renderBuilder(); });
   on('cPrev', () => { step--; renderBuilder(); });
+  box.querySelectorAll('[data-site]').forEach(b => b.onclick = () => { if (B.site !== b.dataset.site) { B.site = b.dataset.site; B.bld = ''; B.fl = ''; B.no = ''; B.addr = ''; S.conf.lastSite = B.site; save(); } re(); });
+  on('addSite', () => siteSheet());
+  if ($('addr')) $('addr').oninput = ev => { B.addr = ev.target.value; B.edited = null; liveUpdate(); };
   box.querySelectorAll('[data-bld]').forEach(b => b.onclick = () => { B.bld = B.bld === b.dataset.bld ? '' : b.dataset.bld; re(); if (B.bld) $('fl').focus(); });
   // 打字時只更新上面那一行，不重畫，才不會打到一半跳掉
   if ($('fl')) $('fl').oninput = ev => { B.fl = ev.target.value.replace(/\D/g, ''); B.edited = null; liveUpdate(); };
   if ($('no')) $('no').oninput = ev => { B.no = ev.target.value.replace(/\D/g, ''); B.edited = null; liveUpdate(); };
-  on('morePlace', () => { const p = placeNow(); if (!p) return toast('先選 153號／161號 和樓層'); if (!B.places.includes(p)) B.places.push(p); B.fl = ''; B.no = ''; re(); $('fl').focus(); });
+  on('morePlace', () => { const p = placeNow(); if (!p) return toast((siteOf(B.site).blds || []).length ? '先選哪一棟和樓層' : '先打地址或戶號'); if (!B.places.includes(p)) B.places.push(p); B.fl = ''; B.no = ''; B.addr = ''; re(); ($('fl') || $('addr')).focus(); });
   box.querySelectorAll('[data-rmp]').forEach(b => b.onclick = () => { B.places.splice(+b.dataset.rmp, 1); re(); });
   box.querySelectorAll('[data-plc]').forEach(b => b.onclick = () => { const v = b.dataset.plc; B.places.includes(v) ? B.places.splice(B.places.indexOf(v), 1) : B.places.push(v); re(); });
   if ($('who')) $('who').oninput = () => { B.who = $('who').value.trim(); B.edited = null; liveUpdate(); };
@@ -212,22 +265,27 @@ function bindBuilder() {
   const nextOnEnter = (id, go) => { const el = $(id); if (el) el.onkeydown = ev => { if (ev.isComposing || ev.keyCode === 229) return; if (ev.key === 'Enter' || ev.keyCode === 13) { ev.preventDefault(); go(); } }; };
   nextOnEnter('fl', () => $('no').focus());
   nextOnEnter('no', () => $('who').focus());
+  nextOnEnter('addr', () => $('who').focus());
   nextOnEnter('who', () => { step++; renderBuilder(); });
   nextOnEnter('extra', () => { step++; renderBuilder(); });
   // 2 位數的樓層打完自動跳到「之」
   if ($('fl')) $('fl').addEventListener('input', ev => { if (ev.target.value.length >= 2) $('no').focus(); });
   if ($('pplBox')) pplEditor($('pplBox'), B.people);
+  if ($('cD')) $('cD').onchange = () => { B.d = $('cD').value; };
   on('gSave', () => commit());
+  on('gSave2', () => commit());
   on('gCal', () => { const e = commit(true); if (e) calSheet(e); });
   on('gMail', () => { const e = commit(true); if (e) mailSheet(e); });
 }
 function commit(quiet) {
   const t = ($('prev') ? $('prev').value : line()).trim(); if (!t) { toast('還沒有內容，回上一步點選項'); return null; }
   placesAll().forEach(v => used('places', v)); ['items', 'acts', 'mates'].forEach(k => B[k].forEach(v => used(k, v)));
-  const n0 = new Date(), e = { id: uid(), d: today(), tm: `${pad(n0.getHours())}:${pad(n0.getMinutes())}`, text: t.replace(/_OK$/, ''), ok: /_OK$/.test(t), cal: false, mail: false, people: B.people.slice(),
+  const n0 = new Date(), day = ($('cD') && $('cD').value) || B.d || today(), cid = B.cid;
+  const e = { id: uid(), cid: cid || undefined, ord: cid ? nextOrd(cid) : undefined, d: day, tm: day === today() ? `${pad(n0.getHours())}:${pad(n0.getMinutes())}` : '', text: t.replace(/_OK$/, ''), ok: /_OK$/.test(t), cal: false, mail: false, people: B.people.slice(),
     f: B.edited == null ? { place: placesAll().join('、'), who: B.who, items: B.items.join('、'), acts: [B.acts.join('、'), B.extra].filter(Boolean).join('，'), mates: B.mates.join('、') } : null };
-  S.entries.unshift(e); save(); B = blank(); closeComposer(); renderList(); scrollTo({ top: 0 });
-  if (!quiet) toast('記下來了'); return e;
+  S.entries.unshift(e); save(); B = blank(); closeComposer(); renderList();
+  if (cid) openCase(cid); else scrollTo({ top: 0 });
+  if (!quiet) toast(cid ? '已加到案子' : '記下來了'); return e;
 }
 function addOpt(k) {
   const name = { places: '地點', items: '事項', acts: '做了什麼', mates: '一起的人' }[k];
@@ -243,18 +301,19 @@ function full(e) { return e.text + (e.ok ? '_OK' : ''); }
 // 選取模式：點每一筆打勾，下面一次刪除
 let selMode = false; const picked = new Set();
 function entryHTML(e, showDate) {
-  const age = !e.ok && showDate ? daysAgo(e.d) : 0;
+  const age = !e.ok && showDate ? daysAgo(e.d) : 0; // 負的＝還沒到
   if (selMode) return `<div class="entry ${picked.has(e.id) ? 'sel' : ''}" data-pick="${e.id}"><div class="t"><span class="ckb">${picked.has(e.id) ? '✓' : ''}</span><b>${md(e.d)}${e.tm ? ' ' + e.tm : ''}</b>　${esc(full(e))}</div></div>`;
-  return `<div class="entry ${e.ok ? 'ok' : ''} ${age >= 7 ? 'old' : ''}"><div class="when">${showDate ? `${md(e.d)}（${wd(e.d)}）` : ''}${e.tm ? ` ${e.tm}` : ''}${showDate && age ? `<span class="hint">　${age} 天前</span>` : ''}</div><div class="t">${esc(full(e))}</div>
+  return `<div class="entry ${e.ok ? 'ok' : ''} ${age >= 7 ? 'old' : ''}"><div class="when">${showDate ? `${md(e.d)}（${wd(e.d)}）` : ''}${e.tm ? ` ${e.tm}` : ''}${showDate && age ? `<span class="hint">　${age > 0 ? age + ' 天前' : '還有 ' + (-age) + ' 天'}</span>` : ''}</div><div class="t">${esc(full(e))}</div>
+    ${e.cid && caseOf(e.cid) ? `<button class="casechip" data-case="${e.cid}">📁 ${esc(caseOf(e.cid).title)}　${prog(caseOf(e.cid)).done}/${prog(caseOf(e.cid)).n}</button>` : ''}
     ${(e.people || []).length ? `<div class="ppl">${e.people.map(x => `<span class="pp"><b>${esc(x.n || '（沒寫名字）')}</b>${x.p ? `<a class="pb" href="tel:${esc(telOf(x.p))}">📞 ${esc(x.p)}</a><a class="pb" href="sms:${esc(telOf(x.p))}">💬</a>` : ''}</span>`).join('')}</div>` : ''}
     <div class="acts">${e.ok ? '<span class="badge ok">OK</span>' : '<span class="badge">還沒做完</span>'}${e.cal ? '<span class="hint">📅已上日曆</span>' : ''}${e.mail ? '<span class="hint">✉️已寄</span>' : ''}<span style="flex:1"></span>
       <button class="sm ${e.ok ? '' : 'pri'}" data-ok="${e.id}">${e.ok ? '取消OK' : '✓ 做完了'}</button><button class="sm" data-more="${e.id}">更多…</button></div></div>`;
 }
 // 篩選：狀態按鈕＋搜尋字；有篩選時改成一條按時間排的清單
-let fil = 'all', fq = '';
+let fil = 'all', fq = '', toolsOpen = false;
 const FIL = { all: '全部', todo: '還沒做完', ok: '做完了', cal: '📅 上過日曆', nocal: '還沒上日曆', mail: '✉️ 寄過信' };
 const passF = e => (fil === 'all' || (fil === 'todo' && !e.ok) || (fil === 'ok' && e.ok) || (fil === 'cal' && e.cal) || (fil === 'nocal' && !e.cal) || (fil === 'mail' && e.mail))
-  && (!fq || fq.split(/\s+/).every(w => (e.text + ' ' + md(e.d) + ' ' + (e.people || []).map(x => x.n + ' ' + x.p + ' ' + x.p.replace(/\D/g, '')).join(' ')).includes(w)));
+  && (!fq || fq.split(/\s+/).every(w => (e.text + ' ' + md(e.d) + ' ' + ((caseOf(e.cid) || {}).title || '') + ' ' + (e.people || []).map(x => x.n + ' ' + x.p + ' ' + x.p.replace(/\D/g, '')).join(' ')).includes(w)));
 const daysAgo = d => Math.round((new Date(today() + 'T00:00') - new Date(d + 'T00:00')) / 864e5);
 function weekStart() { const d = new Date(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return iso(d); }
 function renderList() {
@@ -270,9 +329,11 @@ function renderList() {
   const again = S.fav.map(f => f.text);
   $('dash').innerHTML = !list.length ? '' : `
     <div class="tiles"><div class="tile warn"><b>${notDone.length}</b><span>還沒做完</span></div><div class="tile"><b>${todays.length}</b><span>今天記了</span></div><div class="tile ok"><b>${weekOk}</b><span>這週做完</span></div></div>
-    <div class="filters"><input id="fq" type="search" placeholder="🔍 找地點、東西、聯絡人，例：161 22、馬桶、福興" value="${esc(fq)}">
+    <details class="tools" id="tools" ${toolsOpen || fil !== 'all' || fq || selMode ? 'open' : ''}><summary>🔍 搜尋、篩選、匯出、刪除</summary>
+    <div class="filters"><input id="fq" type="search" placeholder="找地點、東西、聯絡人，例：161 22、馬桶、福興" value="${esc(fq)}">
       <div class="chips">${Object.entries(FIL).map(([k, v]) => `<button class="chip ${fil === k ? 'on' : ''}" data-fil="${k}">${v}</button>`).join('')}</div></div>
-    <div class="row" style="justify-content:flex-end;margin-top:8px">${selMode ? '<span class="hint">點每一筆來勾選，下面按刪除</span>' : '<button class="sm" id="bXls">⬇ 匯出 Excel</button><button class="sm" id="bSel">☑ 選取刪除</button>'}</div>`;
+    <div class="row" style="justify-content:flex-end;margin:8px 0 4px">${selMode ? '<span class="hint">點每一筆來勾選，下面按刪除</span>' : '<button class="sm" id="bXls">⬇ 匯出 Excel</button><button class="sm" id="bSel">☑ 選取刪除</button>'}</div></details>`;
+  if ($('tools')) $('tools').ontoggle = () => { toolsOpen = $('tools').open; };
   $('dash').querySelectorAll('[data-fil]').forEach(b => b.onclick = () => { fil = b.dataset.fil; renderList(); });
   $('dash').querySelectorAll('.tile').forEach((b, i) => b.onclick = () => { fil = ['todo', 'all', 'ok'][i]; renderList(); });
   if ($('fq')) $('fq').oninput = ev => { fq = ev.target.value.trim(); const pos = ev.target.selectionStart; renderList(); const f = $('fq'); f.focus(); try { f.setSelectionRange(pos, pos); } catch (x) {} };
@@ -282,34 +343,41 @@ function renderList() {
     <div class="again">${again.map((x, i) => `<button data-again="${i}">↻ ${esc(x)}</button>`).join('') || '<p class="hint">還沒有常用。按「✎ 管理常用」加，或在任何一筆的「更多…」按「⭐ 加到常用」。</p>'}</div>`;
   $('favEdit').onclick = favSheet;
   $('again').querySelectorAll('[data-again]').forEach(b => b.onclick = () => { B = blank(); B.edited = again[+b.dataset.again]; step = 3; $('builder').hidden = false; renderBuilder(); });
+  renderCases();
   const filtering = list.length && (fil !== 'all' || fq);
+  $('cases').hidden = !!filtering;
   if (filtering) {
     const res = list.filter(passF).sort((a, b) => (b.d + (b.tm || '')).localeCompare(a.d + (a.tm || '')));
     $('pending').innerHTML = `<h2>${FIL[fil]}${fq ? `・「${esc(fq)}」` : ''}：${res.length} 筆 <button class="link" id="fClr">清除篩選</button></h2><div style="display:flex;flex-direction:column;gap:6px">${res.map(e => entryHTML(e, true)).join('') || '<p class="hint">沒有符合的</p>'}</div>`;
     $('fClr').onclick = () => { fil = 'all'; fq = ''; renderList(); };
     $('days').innerHTML = ''; $('again').innerHTML = '';
-  } else $('pending').innerHTML = pend.length ? `<h2>之前還沒做完的（${pend.length}）</h2><div style="display:flex;flex-direction:column;gap:6px">${pend.map(e => entryHTML(e, true)).join('')}</div>` : '';
+  } else $('pending').innerHTML = pend.length ? `<h2>⚠ 之前還沒做完的（${pend.length}）</h2><div style="display:flex;flex-direction:column;gap:6px">${pend.map(e => entryHTML(e, true)).join('')}</div>` : '';
   if (!filtering) {
-  const days = {}; list.filter(e => e.d !== t).forEach(e => (days[e.d] = days[e.d] || []).push(e));
+  // 案子裡還沒做的步驟放在案子裡看，不擠在每天的清單；做完的照樣出現在那天
+  const inLog = e => !(e.cid && !e.ok);
+  const todaysLog = todays.filter(inLog);
+  const days = {}; list.filter(e => e.d < t && inLog(e)).forEach(e => (days[e.d] = days[e.d] || []).push(e));
   const ks = Object.keys(days).sort().reverse().slice(0, 14);
   const dayBlock = k => `<h2 style="display:flex;align-items:center"><span style="flex:1" class="dayh">${k === t ? '今天　' : ''}${md(k)}（${wd(k)}）</span>${selMode ? `<button class="link" data-pickday="${k}">選這天全部</button>` : `<button class="link" data-copyday="${k}">📋 複製這天全部</button>`}</h2>
-    <div style="display:flex;flex-direction:column;gap:6px">${(k === t ? todays : days[k]).map(e => entryHTML(e)).join('')}</div>`;
+    <div style="display:flex;flex-direction:column;gap:6px">${(k === t ? todaysLog : days[k]).map(e => entryHTML(e)).join('')}</div>`;
   $('days').innerHTML = !list.length ? `<div class="intro"><b style="font-size:18px">做完一件事，記一筆</b>
-      <div>按下面的「＋ 記一筆」，點地點、東西、做了什麼，就會組出日曆要的那一行，例如：</div>
+      <div>最下面三個按鈕：「＋ 記一筆」點地點、東西、做了什麼，組出日曆要的那一行；「📋 貼上」把 LINE 或日曆複製的文字放進來；「📁 開案子」管有好幾個步驟的事。例如：</div>
       <div class="ex">新店機廠站161號22樓之5，水龍頭，修繕_毅、德哥</div>
       <div>記好以後可以放上日曆、寄到信箱。還沒做完的會留在這裡，做完按「✓ 做完了」，後面就會加上 _OK。</div></div>`
-    : (todays.length ? dayBlock(t) : `<h2>今天 ${md(t)}（${wd(t)}）</h2><p class="hint">今天還沒記，按下面「＋ 記一筆」。</p>`)
+    : upcomingHTML() + (todaysLog.length ? dayBlock(t) : `<h2>今天 ${md(t)}（${wd(t)}）</h2><p class="hint">今天還沒記，按最下面「＋ 記一筆」或「📋 貼上」。</p>`)
       + (ks.length ? `<details ${selMode ? 'open' : ''}><summary>之前的紀錄（${ks.length} 天）</summary>${ks.map(dayBlock).join('')}</details>` : '');
   }
   document.querySelectorAll('[data-pick]').forEach(el => el.onclick = () => { const id = el.dataset.pick; picked.has(id) ? picked.delete(id) : picked.add(id); renderList(); });
   document.querySelectorAll('[data-pickday]').forEach(b => b.onclick = () => { const ids = S.entries.filter(e => e.d === b.dataset.pickday).map(e => e.id), all = ids.every(id => picked.has(id)); ids.forEach(id => all ? picked.delete(id) : picked.add(id)); renderList(); });
-  $('selbar').hidden = !selMode; $('bNew').hidden = selMode;
+  $('selbar').hidden = !selMode; $('abar').hidden = selMode;
+  if (openCaseId && !$('caseV').hidden && !renderList.inCase) { renderList.inCase = true; openCase(openCaseId); renderList.inCase = false; }
   $('selN').textContent = `已選 ${picked.size} 筆`; $('selDel').disabled = !picked.size; $('selDel').textContent = '🗑 刪除'; delete $('selDel').dataset.sure;
   document.querySelectorAll('[data-ok]').forEach(b => b.onclick = () => { const e = find(b.dataset.ok); e.ok = !e.ok; e.okAt = e.ok ? today() : ''; save(); renderList(); toast(e.ok ? '已加上 _OK，要更新日曆就按 📅' : '已取消 OK'); });
   document.querySelectorAll('[data-cal]').forEach(b => b.onclick = () => calSheet(find(b.dataset.cal)));
   document.querySelectorAll('[data-mail]').forEach(b => b.onclick = () => mailSheet(find(b.dataset.mail)));
   document.querySelectorAll('[data-copy]').forEach(b => b.onclick = () => copy(full(find(b.dataset.copy))));
   document.querySelectorAll('[data-more]').forEach(b => b.onclick = () => moreSheet(find(b.dataset.more)));
+  document.querySelectorAll('button.casechip[data-case]').forEach(b => b.onclick = ev => { ev.stopPropagation(); openCase(b.dataset.case); });
   document.querySelectorAll('[data-copyday]').forEach(b => b.onclick = () => { const k = b.dataset.copyday; copy(md(k) + '\n' + S.entries.filter(e => e.d === k).slice().reverse().map(full).join('\n')); });
 }
 const find = id => S.entries.find(e => e.id === id);
@@ -352,27 +420,29 @@ function mailSheet(e) {
 }
 function moreSheet(e) {
   openSheet(`<div class="go"><button class="cal" id="mCal">📅 上日曆</button><button id="mMail">✉️ 寄信箱</button><button id="mCopy">📋 複製</button></div>
-    <button id="mFav">⭐ 加到常用</button>
+    <div class="row"><button id="mFav" style="flex:1">⭐ 加到常用</button><button id="mCase" style="flex:1">📁 ${e.cid && caseOf(e.cid) ? '換案子' : '放進案子'}</button></div>
     <h3 style="margin:6px 0 0">修改這一行</h3><textarea id="mT" class="big" rows="3" data-title="修改這一行">${esc(e.text)}</textarea><div class="tapedit">點一下會打開大字編輯</div>
     <div class="row"><span class="hint">日期</span><input type="date" id="mD" value="${e.d}" style="width:auto"></div>
     <div class="hint">這件事要聯絡的人</div><div id="mPpl"></div>
     <div class="row"><button class="link" id="mDel" style="color:#b0392b;margin-right:auto">刪除</button><button onclick="closeSheet()">取消</button><button class="pri" id="mOk">儲存</button></div>`);
   const ppl = (e.people || []).slice(); pplEditor($('mPpl'), ppl);
   $('mFav').onclick = () => { const tx = fixLine(e.text); if (!S.fav.some(f => f.text === tx)) S.fav.push({ id: uid(), text: tx }); save(); closeSheet(); renderList(); toast('已加到常用'); };
+  $('mCase').onclick = () => pickCaseSheet(e);
   $('mCal').onclick = () => calSheet(e); $('mMail').onclick = () => { closeSheet(); mailSheet(e); }; $('mCopy').onclick = () => { closeSheet(); copy(full(e)); };
-  $('mOk').onclick = () => { e.text = $('mT').value.trim().replace(/_OK$/, '') || e.text; e.d = $('mD').value || e.d; e.people = ppl; save(); closeSheet(); renderList(); };
-  $('mDel').onclick = () => { if (!$('mDel').dataset.s) { $('mDel').dataset.s = 1; $('mDel').textContent = '再按一次確定刪除'; return; } S.entries = S.entries.filter(x => x !== e); save(); closeSheet(); renderList(); };
+  $('mOk').onclick = () => { e.text = $('mT').value.trim().replace(/_OK$/, '') || e.text; e.d = $('mD').value || e.d; e.people = ppl; save(); closeSheet(); renderList(); if (openCaseId) openCase(openCaseId); };
+  $('mDel').onclick = () => { if (!$('mDel').dataset.s) { $('mDel').dataset.s = 1; $('mDel').textContent = '再按一次確定刪除'; return; } S.entries = S.entries.filter(x => x !== e); save(); closeSheet(); renderList(); if (openCaseId) openCase(openCaseId); };
 }
 function setSheet(msg) {
   const c = S.conf;
   openSheet(`<h3 style="margin:0">⚙ 設定</h3>${msg ? `<div class="badge" style="font-size:14px;padding:6px 10px">${esc(msg)}</div>` : ''}
+    <button id="sTour">📖 再看一次操作教學</button>
     <div class="lbl">字的大小</div>
     <div class="chips" id="sZ">${[[1, '標準'], [1.15, '大'], [1.3, '特大']].map(([z, n]) => `<button class="chip ${(c.zoom || 1) === z ? 'on' : ''}" data-z="${z}">${n}</button>`).join('')}</div>
-    <div class="lbl">每一行開頭</div><input id="sP" value="${esc(c.prefix)}">
+    <div class="lbl">預設的開頭（第一個站／社區的名稱）</div><input id="sP" value="${esc(c.prefix)}">
     <div class="lbl">自己的署名（加在 _ 後面）</div><input id="sM" value="${esc(c.me)}">
     <div class="lbl">「寄信箱」寄到哪裡</div><input id="sE" type="email" value="${esc(c.email)}" placeholder="例：自己的 Gmail">
     
-    <button id="sOpts">🔧 管理按鈕選項（地點、事項、做了什麼、一起的人）</button>
+    <button id="sOpts">🔧 管理按鈕選項（站／社區、地點、事項、做了什麼、一起的人）</button>
     <button id="sFav">⭐ 管理常用</button>
     <div class="row" style="justify-content:flex-end"><button onclick="closeSheet()">取消</button><button class="pri" id="sOk">儲存</button></div>
     <hr style="border:0;border-top:1px solid var(--line);width:100%">
@@ -385,23 +455,29 @@ function setSheet(msg) {
   $('sExp').onclick = () => { const d = new Date(), a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify({ app: 'worklog', v: 1, S }, null, 1)], { type: 'application/json' })); a.download = `工作日誌備份_${iso(d)}.json`; document.body.appendChild(a); a.click(); a.remove(); };
   $('sPaste').onclick = pasteSheet;
   $('sImp').onchange = async () => { const f = $('sImp').files[0]; if (!f) return; try { const n = importText(await f.text()); save(); closeSheet(); renderList(); toast(`匯入 ${n} 筆`); } catch (err) { toast('匯入失敗：' + err.message); } };
-  $('sOld').onclick = () => { const lim = (() => { const d = new Date(); d.setDate(d.getDate() - 30); return iso(d); })(), old = S.entries.filter(e => e.ok && e.d < lim);
+  $('sOld').onclick = () => { const lim = (() => { const d = new Date(); d.setDate(d.getDate() - 30); return iso(d); })(), oldCases = S.cases.filter(c => { const p = prog(c); return p.n && p.done === p.n && stepsOf(c).every(s => s.d < lim); }),
+      old = S.entries.filter(e => e.ok && e.d < lim && (!e.cid || oldCases.some(c => c.id === e.cid)));
     if (!old.length) return toast('沒有 30 天以前做完的');
     const b = $('sOld'); if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = `再按一次，刪除 ${old.length} 筆`; return; }
-    S.entries = S.entries.filter(e => !old.includes(e)); save(); closeSheet(); renderList(); toast(`已刪除 ${old.length} 筆`); };
+    S.entries = S.entries.filter(e => !old.includes(e)); S.cases = S.cases.filter(c => !oldCases.includes(c)); save(); closeSheet(); renderList(); toast(`已刪除 ${old.length} 筆`); };
+  $('sTour').onclick = () => { closeSheet(); startTour(); };
   $('sOpts').onclick = () => optsSheet('items'); $('sFav').onclick = favSheet;
   $('sZ').querySelectorAll('[data-z]').forEach(b => b.onclick = () => { c.zoom = +b.dataset.z; save(); applyZoom(); $('sZ').querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === b)); });
-  $('sOk').onclick = () => { c.prefix = $('sP').value.trim(); c.me = $('sM').value.trim() || '毅'; c.email = $('sE').value.trim();
+  $('sOk').onclick = () => { const np = $('sP').value.trim(); if (np && c.sites[0] && c.sites[0].name === c.prefix) c.sites[0].name = np; c.prefix = np; c.me = $('sM').value.trim() || '毅'; c.email = $('sE').value.trim();
 
     save(); closeSheet(); toast('已儲存'); };
 }
 // 匯入：備份檔（JSON）合併；或是日曆文字（日期一行、下面一行一筆）
-function importText(txt, baseDay) {
-  const have = new Set(S.entries.map(e => e.d + '|' + e.text)); let n = 0;
-  const add = x => { const k = x.d + '|' + x.text; if (!x.text || have.has(k)) return; have.add(k); S.entries.push(x); n++; };
+function importText(txt, baseDay, cid, onCal = true) {
+  const have = new Set(S.entries.map(e => e.d + '|' + e.text)); let n = 0, ord = cid ? nextOrd(cid) : 0;
+  const add = x => { const k = x.d + '|' + x.text; if (!x.text || have.has(k)) return; have.add(k);
+    if (cid && !x.cid) { x.cid = cid; x.ord = ord++; x.imp = false; } // 貼進案子的：當成這件案子的步驟
+    S.entries.push(x); n++; };
   if (/^\s*\{/.test(txt)) {
     const j = JSON.parse(txt); if (!j.S || !Array.isArray(j.S.entries)) throw new Error('這不是工作日誌的備份檔');
     j.S.entries.forEach(add);
+    (j.S.cases || []).forEach(c => { if (!S.cases.some(x => x.id === c.id)) S.cases.push(c); });
+    (j.S.tpls || []).forEach(c => { if (!(S.tpls || []).some(x => x.name === c.name)) (S.tpls = S.tpls || []).push(c); });
     for (const k of ['places', 'items', 'acts', 'mates']) (j.S.conf && j.S.conf[k] || []).forEach(v => { if (!S.conf[k].includes(v)) S.conf[k].push(v); });
   } else {
     // 舊日曆文字是過去的紀錄：照原樣匯入（有 _OK 的算做完），但不放進首頁「還沒做完」，用篩選才找得到
@@ -414,7 +490,7 @@ function importText(txt, baseDay) {
       if (m) { let y = now.getFullYear(); if (+m[1] > now.getMonth() + 2) y--; d = `${y}-${pad(+m[1])}-${pad(+m[2])}`; noDate.splice(0).forEach(x => { x.d = d; add(x); }); continue; }
       const last = noDate.length ? noDate[noDate.length - 1] : lastAdded;
       if (last && /^[_＿，,、。]/.test(l)) { const tx = last.text + (last.ok ? '_OK' : '') + l; last.text = tx.replace(/[_＿]OK$/i, ''); last.ok = /[_＿]OK$/i.test(tx); continue; } // LINE 裡斷行的下半句，接回上一行
-      const x = { id: uid(), d, tm: '', text: l.replace(/[_＿]OK$/i, ''), ok: /[_＿]OK$/i.test(l), cal: true, mail: false, imp: true };
+      const x = { id: uid(), d, tm: '', text: l.replace(/[_＿]OK$/i, ''), ok: /[_＿]OK$/i.test(l), cal: onCal, mail: false, imp: true };
       lastAdded = d ? x : null;
       if (d) add(x); else noDate.push(x); // 第一個日期之前的幾行，算在下一個日期
     }
@@ -427,15 +503,30 @@ function importText(txt, baseDay) {
 }
 // 貼上匯入：從 Google 日曆、記事本複製一段文字直接貼進來，不用存成檔案
 function pasteSheet() {
-  openSheet(`<h3 style="margin:0">📋 貼上日曆文字</h3>
-    <div class="hint">從 LINE、日曆或記事本複製紀錄，貼在下面。日期寫一行（例：8/12、11月4日），下面一行一筆；結尾有 _OK 的算做完。時間那幾行會自動略過。</div>
-    <div class="row"><span class="hint">沒寫日期的，算哪一天</span><input type="date" id="pD" style="width:auto"></div>
-    <textarea id="pT" class="big" rows="10" data-title="貼上日曆文字" placeholder="8/12&#10;新店機廠站161號17樓之7，馬桶蓋更新，現勘_毅&#10;新店機廠161號8樓之5_滿意度調查表_簽認_毅_OK"></textarea>
+  openSheet(`<h3 style="margin:0">📋 貼上</h3>
+    <div class="hint">從 LINE、日曆或記事本複製的文字，貼在下面（點框框，長按選「貼上」）。一行一筆，日期可以單獨寫一行（例：11/16）；結尾有 _OK 的算做完。</div>
+    <textarea id="pT" class="big" rows="7" data-title="貼上" placeholder="11/16&#10;新店機廠站161號6樓之1，退租點交，聯絡通知_毅&#10;新店機廠站161號8樓之5_滿意度調查表_簽認_毅_OK"></textarea>
     <div class="hint" id="pPrev"></div>
-    <div class="row" style="justify-content:flex-end"><button onclick="closeSheet()">取消</button><button class="pri" id="pOk">匯入</button></div>`);
+    <div class="lbl">放進哪件案子？（可不選）</div>
+    <div class="chips" id="pC"><button class="chip on" data-pcs="">不放，當一般紀錄</button>${S.cases.filter(c => !caseDone(c)).map(c => `<button class="chip" data-pcs="${c.id}">📁 ${esc(c.title)}</button>`).join('')}<button class="chip" data-pcs="__new">＋ 開一件新案子</button></div>
+    <input id="pCN" placeholder="新案子的名稱，例：161號6樓之1 退租點交" hidden>
+    <div class="row"><span class="hint">沒寫日期的，算哪一天</span><input type="date" id="pD" style="width:auto"></div>
+    <label class="row"><input type="checkbox" id="pCal" style="width:auto"> 這些已經放上日曆了（從日曆複製的就打勾）</label>
+    <div class="row" style="justify-content:flex-end"><button onclick="closeSheet()">取消</button><button class="pri" id="pOk">放進去</button></div>`);
   const prev = () => { const v = $('pT').value.split(/\r?\n/).map(s => s.trim()).filter(Boolean).length; $('pPrev').textContent = v ? `共 ${v} 行（日期那幾行不算在筆數裡）` : ''; };
   $('pT').oninput = prev; $('pD').value = today();
-  $('pOk').onclick = () => { const v = $('pT').value; if (!v.trim()) return toast('先貼上文字'); try { const n = importText(v, $('pD').value); save(); closeSheet(); renderList(); toast(n ? `匯入 ${n} 筆，可以在「常記的」直接再用` : '沒有新的（都已經有了）'); } catch (err) { toast('匯入失敗：' + err.message); } };
+  // 試著直接讀剪貼簿（第一次手機會問可不可以），讀不到就讓他自己貼
+  if (navigator.clipboard && navigator.clipboard.readText) navigator.clipboard.readText().then(x => { if (x && x.trim() && !$('pT').value) { $('pT').value = x.trim(); prev(); toast('已經把剛剛複製的文字貼上了'); } }).catch(() => {});
+  let pcSel = openCaseId || '';
+  const pcSync = () => { $('pC').querySelectorAll('[data-pcs]').forEach(b => b.classList.toggle('on', b.dataset.pcs === pcSel)); $('pCN').hidden = pcSel !== '__new'; };
+  $('pC').querySelectorAll('[data-pcs]').forEach(b => b.onclick = () => { pcSel = b.dataset.pcs; pcSync(); });
+  pcSync();
+  $('pOk').onclick = () => { const v = $('pT').value; if (!v.trim()) return toast('先貼上文字'); try {
+    let cid = pcSel;
+    if (cid === '__new') { const nm = $('pCN').value.trim(); if (!nm) return toast('請寫新案子的名稱'); const c = { id: uid(), title: nm, place: '', created: today() }; S.cases.unshift(c); cid = c.id; }
+    const n = importText(v, $('pD').value, cid || '', $('pCal').checked); save(); closeSheet(); renderList();
+    if (cid) openCase(cid);
+    toast(n ? (cid ? `已把 ${n} 筆放進案子` : `匯入 ${n} 筆`) : '沒有新的（都已經有了）'); } catch (err) { toast('匯入失敗：' + err.message); } };
 }
 // 聯絡人：只掛在這一筆上。打過的人會出現在下面，點一下就加，不用再打電話號碼
 const telOf = p => String(p).replace(/[^\d+#*]/g, '');
@@ -465,6 +556,7 @@ function pplEditor(box, arr) {
 function fieldsOf(e) {
   if (e.f) return { place: e.f.place, who: e.f.who, items: e.f.items, acts: e.f.acts, mates: e.f.mates };
   let s = e.text.replace(/^新店機廠站?[，,、]?/, ''), mates = '';
+  for (const n of siteNames()) if (s.startsWith(n)) { s = s.slice(n.length).replace(/^[，,、]/, ''); break; }
   const u = s.lastIndexOf('_'); if (u >= 0) { mates = s.slice(u + 1).split(/[、,，]/).filter(x => x && x !== S.conf.me).join('、'); s = s.slice(0, u); }
   const parts = s.split(/[，,]/).map(x => x.trim()).filter(Boolean);
   // 開頭連續的地點（153號14樓之23、21樓之15、空屋…），用「、」分開的都算
@@ -499,9 +591,9 @@ function xlsSheet() {
   $('xGo').onclick = () => {
     const list = pick(); if (!list.length) return toast('這段時間沒有紀錄');
     const withP = $('xPpl').checked;
-    const head = ['日期', '時間', '狀態', '地點', '對象', '事項', '做了什麼／內容', '一起的人', ...(withP ? ['聯絡人'] : []), '已上日曆', '已寄信', '完整一行'];
-    const rows = list.map(e => { const f = fieldsOf(e); return [e.d.replace(/-/g, '/'), e.tm || '', e.ok ? '做完' : '還沒做完', f.place, f.who, f.items, f.acts, f.mates, ...(withP ? [(e.people || []).map(x => [x.n, x.p].filter(Boolean).join(' ')).join('\n')] : []), e.cal ? '是' : '', e.mail ? '是' : '', full(e)]; });
-    const w = withP ? [11, 7, 9, 20, 14, 18, 28, 12, 22, 8, 7, 50] : [11, 7, 9, 20, 14, 18, 28, 12, 8, 7, 50];
+    const head = ['日期', '時間', '狀態', '案子', '地點', '對象', '事項', '做了什麼／內容', '一起的人', ...(withP ? ['聯絡人'] : []), '已上日曆', '已寄信', '完整一行'];
+    const rows = list.map(e => { const f = fieldsOf(e); return [e.d.replace(/-/g, '/'), e.tm || '', e.ok ? '做完' : '還沒做完', (caseOf(e.cid) || {}).title || '', f.place, f.who, f.items, f.acts, f.mates, ...(withP ? [(e.people || []).map(x => [x.n, x.p].filter(Boolean).join(' ')).join('\n')] : []), e.cal ? '是' : '', e.mail ? '是' : '', full(e)]; });
+    const w = withP ? [11, 7, 9, 22, 20, 14, 18, 28, 12, 22, 8, 7, 50] : [11, 7, 9, 22, 20, 14, 18, 28, 12, 8, 7, 50];
     const blob = xlsx('工作日誌', head, rows, w), a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = `工作日誌_${($('xF').value || '全部').replace(/-/g, '')}-${($('xT').value || '').replace(/-/g, '')}.xlsx`;
     document.body.appendChild(a); a.click(); a.remove(); closeSheet(); toast(`已匯出 ${list.length} 筆`);
@@ -561,18 +653,174 @@ function favSheet() {
   document.querySelectorAll('[data-pk]').forEach(b => b.onclick = () => { L.push({ id: uid(), text: b.dataset.pk }); redraw(); });
 }
 // 🔧 管理按鈕選項：一類一頁，選項是一顆一顆的，✕ 刪掉、下面加新的
+// 站／社區：新增、刪除、設定每個站的棟號（用、分開；不填＝直接打地址）
+function siteSheet() {
+  const L = S.conf.sites;
+  openSheet(`<h3 style="margin:0">📍 站／社區</h3>
+    <div class="hint">每個地方可以設定自己的棟號（例：153號、161號），用「、」分開；不填的話，記一筆時就直接打地址。選哪個地方，那一行的開頭就換成它。</div>
+    <div id="stL" style="display:flex;flex-direction:column;gap:8px">${L.map((s, i) => `<div class="entry"><b style="font-size:17px">${esc(s.name)}</b>
+      <div class="row"><span class="hint">棟號</span><input data-sb="${i}" value="${esc((s.blds || []).join('、'))}" placeholder="不填＝直接打地址" style="flex:1"></div>
+      <div class="acts"><span style="flex:1"></span>${L.length > 1 ? `<button class="sm" data-srm="${i}" style="color:#b0392b">✕ 刪掉</button>` : ''}</div></div>`).join('')}</div>
+    <div class="lbl">新增一個地方</div>
+    <input id="stN" placeholder="名稱，例：美麗景安社區、南勢角站">
+    <input id="stB" placeholder="棟號（可不填），例：A棟、B棟">
+    <div class="row" style="justify-content:flex-end"><button class="pri" id="stAdd">＋ 加入</button></div>
+    <div class="row" style="justify-content:flex-end"><button onclick="closeSheet()">完成</button></div>`);
+  const split = v => [...new Set(v.split(/[、,，\s]+/).map(x => x.trim()).filter(Boolean))];
+  document.querySelectorAll('[data-sb]').forEach(i => i.onchange = () => { L[+i.dataset.sb].blds = split(i.value); save(); if (!$('builder').hidden) renderBuilder(); });
+  document.querySelectorAll('[data-srm]').forEach(b => b.onclick = () => { if (!b.dataset.s) { b.dataset.s = 1; b.textContent = '再按一次刪掉'; return; } L.splice(+b.dataset.srm, 1); save(); if (!siteNames().includes(B.site)) B.site = L[0].name; siteSheet(); if (!$('builder').hidden) renderBuilder(); });
+  $('stAdd').onclick = () => { const n = $('stN').value.trim(); if (!n) return toast('請寫地方名稱'); if (siteNames().includes(n)) return toast('已經有這個地方了');
+    L.push({ name: n, blds: split($('stB').value) }); save(); toast('已加入「' + n + '」');
+    if (!$('builder').hidden) { B.site = n; B.bld = ''; B.addr = ''; S.conf.lastSite = n; closeSheet(); renderBuilder(); } else siteSheet(); };
+}
 function optsSheet(k) {
-  const N = { places: '地點', items: '事項', acts: '做了什麼', mates: '一起的人' };
+  const N = { places: '其他地點', items: '事項', acts: '做了什麼', mates: '一起的人' };
   openSheet(`<h3 style="margin:0">🔧 管理按鈕選項</h3>
-    <div class="chips">${Object.entries(N).map(([kk, n]) => `<button class="chip ${kk === k ? 'on' : ''}" data-ok2="${kk}">${n}</button>`).join('')}</div>
+    <div class="chips"><button class="chip" id="opSite">📍 站／社區</button>${Object.entries(N).map(([kk, n]) => `<button class="chip ${kk === k ? 'on' : ''}" data-ok2="${kk}">${n}</button>`).join('')}</div>
     <div class="hint">點 ✕ 刪掉；「${N[k]}」的按鈕會照常用的次數排序。</div>
     <div class="chips">${S.conf[k].map((v, i) => `<button class="chip" data-rmo="${i}">${esc(v)} ✕</button>`).join('') || '<span class="hint">沒有選項</span>'}</div>
     <div class="row"><input id="opNew" placeholder="新增一個${N[k]}" style="flex:1"><button class="pri" id="opAdd">加</button></div>
     <div class="row" style="justify-content:flex-end"><button onclick="setSheet()">回設定</button><button class="pri" onclick="closeSheet()">完成</button></div>`);
   document.querySelectorAll('[data-ok2]').forEach(b => b.onclick = () => optsSheet(b.dataset.ok2));
+  $('opSite').onclick = siteSheet;
   document.querySelectorAll('[data-rmo]').forEach(b => b.onclick = () => { S.conf[k].splice(+b.dataset.rmo, 1); save(); optsSheet(k); });
   const add = () => { const v = $('opNew').value.trim(); if (!v) return; if (!S.conf[k].includes(v)) S.conf[k].push(v); save(); optsSheet(k); toast('已加入'); };
   $('opAdd').onclick = add; $('opNew').onkeydown = ev => { if (ev.isComposing || ev.keyCode === 229) return; if (ev.key === 'Enter') { ev.preventDefault(); add(); } };
+}
+/* ============ 案子（母任務）與步驟（子任務） ============ */
+// 案子不上日曆，用來看進度；底下每一步就是一般的一行（有日期、要上日曆）
+const caseOf = id => id ? S.cases.find(c => c.id === id) : null;
+// 同一天的步驟照原本的順序（ord）排
+const stepsOf = c => S.entries.filter(e => e.cid === c.id).sort((a, b) => a.d.localeCompare(b.d) || (a.ord || 0) - (b.ord || 0) || (a.tm || '').localeCompare(b.tm || ''));
+const nextOrd = cid => Math.max(0, ...S.entries.filter(e => e.cid === cid).map(e => e.ord || 0)) + 1;
+const prog = c => { const s = stepsOf(c); return { n: s.length, done: s.filter(e => e.ok).length }; };
+const caseDone = c => { const p = prog(c); return p.n > 0 && p.done === p.n; };
+const nextStep = c => stepsOf(c).find(e => !e.ok);
+// 範本：步驟裡的地點寫成 {地點}，開新案子時換成新的地點
+function defaultTpls() {
+  const P = S.conf.prefix, me = S.conf.me;
+  return [
+    { id: uid(), name: '退租點交', title: '{地點} 退租點交', steps: [`${P}{地點}，退租點交，聯絡通知_${me}`, `${P}{地點}，退租點交，準備事宜_${me}`, `${P}{地點}，退租點交_${me}`, `${P}{地點}，滿意度調查表，取回_${me}`] },
+    { id: uid(), name: '維修', title: '{地點} 維修', steps: [`${P}{地點}，現勘_${me}`, `${P}{地點}，聯絡廠商、訂料_${me}`, `${P}{地點}，修繕_${me}`, `${P}{地點}，照片整理、滿意度調查表、彙送_${me}`] }
+  ];
+}
+if (!Array.isArray(S.tpls)) S.tpls = defaultTpls();
+// 試用版：第一次打開放幾筆假的示範資料
+if (BETA && !S.entries.length && !S.cases.length) {
+  const dd = n => { const x = new Date(); x.setDate(x.getDate() + n); return iso(x); }, P = S.conf.prefix;
+  const c1 = { id: uid(), title: '161號6樓之1 退租點交', place: '161號6樓之1', created: dd(-5) }, c2 = { id: uid(), title: '153號29樓之22 P管漏水', place: '153號29樓之22', created: dd(-3) };
+  S.cases = [c1, c2];
+  const E = (cid, n, text, ok, cal) => ({ id: uid(), cid, d: dd(n), tm: '', text: P + text + '_毅', ok, cal, mail: false, people: [] });
+  S.entries = [E(c1.id, -4, '161號6樓之1，退租點交，聯絡通知', true, true), E(c1.id, -1, '161號6樓之1，退租點交，準備事宜', true, false), E(c1.id, 4, '161號6樓之1，退租點交', false, true), E(c1.id, 6, '161號6樓之1，滿意度調查表，取回', false, false),
+    E(c2.id, -3, '153號29樓之22，P管漏水，現勘', true, true), E(c2.id, -2, '153號29樓之22，P管漏水，聯絡廠商、訂料', false, false),
+    E(undefined, 0, '地下空車位，巡檢', true, false)].map(e => { if (!e.cid) delete e.cid; return e; });
+  save();
+}
+function caseCard(c) {
+  const p = prog(c), nx = nextStep(c), pct = p.n ? Math.round(p.done / p.n * 100) : 0;
+  return `<div class="cs" data-case="${c.id}"><div class="row"><span class="tt" style="flex:1">📁 ${esc(c.title)}</span><b style="color:var(--accent)">${p.done}/${p.n}</b></div>
+    <div class="pbar"><i style="width:${pct}%"></i></div>
+    <div class="hint">${caseDone(c) ? '✓ 全部做完了' : nx ? `下一步：${md(nx.d)}（${wd(nx.d)}）${esc(siteNames().reduce((s, n) => s.replace(n, ''), nx.text).replace(/^，/, '').replace(/_[^_]*$/, ''))}` : '還沒有步驟，點進去加'}</div></div>`;
+}
+function renderCases() {
+  const open = S.cases.filter(c => !caseDone(c)), done = S.cases.filter(caseDone);
+  $('cases').innerHTML = `<h2 style="display:flex;align-items:center"><span style="flex:1">📁 進行中的案子（${open.length}）</span><button class="link" id="bCase">＋ 開新案子</button></h2>
+    <div style="display:flex;flex-direction:column;gap:8px">${open.map(caseCard).join('') || '<p class="hint">有好幾個步驟的事（例如退租點交、維修），可以開成一件案子，一步一步打勾。</p>'}</div>
+    ${done.length ? `<details><summary>已完成的案子（${done.length}）</summary><div style="display:flex;flex-direction:column;gap:8px">${done.map(caseCard).join('')}</div></details>` : ''}`;
+  $('bCase').onclick = () => newCaseSheet();
+  $('cases').querySelectorAll('.cs[data-case]').forEach(el => el.onclick = () => openCase(el.dataset.case));
+}
+function upcomingHTML() {
+  const up = S.entries.filter(e => !e.ok && e.d > today()).sort((a, b) => a.d.localeCompare(b.d));
+  return up.length ? `<h2>接下來排定的（${up.length}）</h2><div style="display:flex;flex-direction:column;gap:6px">${up.map(e => entryHTML(e, true)).join('')}</div>` : '';
+}
+let openCaseId = null;
+function openCase(id) {
+  const c = caseOf(id); if (!c) return; openCaseId = id;
+  const st = stepsOf(c), p = prog(c);
+  $('caseV').innerHTML = `<div class="top"><button class="pri backbtn" id="cvBack">← 回首頁</button><b style="flex:1;font-size:17px">📁 案子</b><b style="color:var(--accent)">${p.done}/${p.n}</b></div>
+    <div class="body">
+      <input id="cvT" value="${esc(c.title)}" style="font-size:20px;font-weight:900" placeholder="案子名稱，例：161號6樓之1 退租點交">
+      <div class="pbar"><i style="width:${p.n ? Math.round(p.done / p.n * 100) : 0}%"></i></div>
+      <div class="hint">${caseDone(c) ? '✓ 這件案子全部做完了' : '每一步做完就打勾；全部打勾，這件案子就算完成。每一步可以各自放上日曆。'}</div>
+      ${st.map(e => `<div class="stp ${e.ok ? 'done' : ''}"><button class="ck" data-sok="${e.id}">${e.ok ? '✓' : ''}</button>
+        <div style="min-width:0;display:flex;flex-direction:column;gap:4px">
+          <div class="row"><input type="date" data-sd="${e.id}" value="${e.d}" style="width:auto;padding:4px 8px;font-size:15px"><span class="hint">${wd(e.d) ? '（' + wd(e.d) + '）' : ''}${e.cal ? '　📅已上日曆' : ''}</span></div>
+          <div style="word-break:break-all">${esc(full(e))}</div>
+          <div class="row"><span style="flex:1"></span><button class="sm cal" data-cal="${e.id}">📅 上日曆</button><button class="sm" data-more="${e.id}">更多…</button></div></div></div>`).join('') || '<p class="hint">還沒有步驟。</p>'}
+      <div class="row"><button class="pri" id="cvAdd" style="flex:2">＋ 加一步</button><button id="cvPaste" style="flex:1">📋 貼上</button></div>
+      <div class="row"><button id="cvCopy" style="flex:1">⧉ 複製成新案子</button><button id="cvTpl" style="flex:1">⭐ 存成範本</button></div>
+      <button id="cvDel" style="color:#b0392b">🗑 刪除整件案子（連同步驟）</button>
+    </div>`;
+  $('caseV').hidden = false;
+  const box = $('caseV');
+  $('cvBack').onclick = closeCase;
+  $('cvT').onchange = () => { c.title = $('cvT').value.trim() || c.title; save(); renderList(); };
+  box.querySelectorAll('[data-sok]').forEach(b => b.onclick = () => { const e = find(b.dataset.sok); e.ok = !e.ok; e.okAt = e.ok ? today() : ''; save(); renderList(); openCase(id); toast(e.ok ? (caseDone(c) ? '🎉 這件案子全部做完了' : '這一步做完了') : '已取消'); });
+  box.querySelectorAll('[data-sd]').forEach(i => i.onchange = () => { const e = find(i.dataset.sd); if (i.value) { e.d = i.value; e.tm = ''; save(); renderList(); openCase(id); } });
+  box.querySelectorAll('[data-cal]').forEach(b => b.onclick = () => calSheet(find(b.dataset.cal)));
+  box.querySelectorAll('[data-more]').forEach(b => b.onclick = () => moreSheet(find(b.dataset.more)));
+  $('cvAdd').onclick = () => { B = blank(); B.cid = c.id; if (c.place) B.places = [c.place]; step = 0; $('builder').hidden = false; renderBuilder(); };
+  $('cvCopy').onclick = () => newCaseSheet({ fromCase: c });
+  $('cvPaste').onclick = pasteSheet;
+  $('cvTpl').onclick = () => saveTplSheet(c);
+  $('cvDel').onclick = () => { const b = $('cvDel'); if (!b.dataset.s) { b.dataset.s = 1; b.textContent = `再按一次：刪掉這件案子和 ${st.length} 個步驟`; return; }
+    S.entries = S.entries.filter(e => e.cid !== c.id); S.cases = S.cases.filter(x => x !== c); save(); closeCase(); toast('已刪除整件案子（日曆上的不會動）'); };
+}
+function closeCase() { $('caseV').hidden = true; openCaseId = null; renderList(); }
+const PLACE_TOKEN = '{地點}';
+// 開新案子：空白、從範本、或複製一件舊案子（複製出來的是獨立的一份，不會互相同步）
+function newCaseSheet(opt = {}) {
+  const src = opt.fromCase || null;
+  let tplId = '';
+  const stepsFrom = () => {
+    if (src) return stepsOf(src).map(e => src.place ? e.text.split(src.place).join(PLACE_TOKEN) : e.text);
+    const tp = S.tpls.find(x => x.id === tplId); return tp ? tp.steps.slice() : [];
+  };
+  openSheet(`<h3 style="margin:0">${src ? '⧉ 複製成新案子' : '📁 開新案子'}</h3>
+    ${src ? `<div class="hint">從「${esc(src.title)}」複製 ${stepsOf(src).length} 個步驟，地點換成新的；複製出來的是獨立的一份，改這件不會影響原本那件。</div>` :
+      `<div class="lbl">用範本（可不選）</div><div class="chips" id="ncT"><button class="chip on" data-tp="">不用範本</button>${S.tpls.map(x => `<button class="chip" data-tp="${x.id}">${esc(x.name)}</button>`).join('')}</div>`}
+    <div class="lbl">地點</div><input id="ncP" placeholder="例：161號6樓之1" value="">
+    <div class="lbl">案子名稱</div><input id="ncN" placeholder="例：161號6樓之1 退租點交" value="${src ? esc(src.title.split(src.place || '\u0000').join('')) : ''}">
+    <div class="hint" id="ncPrev"></div>
+    <div class="row" style="justify-content:flex-end"><button onclick="closeSheet()">取消</button><button class="pri" id="ncOk">建立</button></div>`);
+  const prev = () => { const pl = $('ncP').value.trim(), s = stepsFrom();
+    $('ncPrev').innerHTML = s.length ? `會帶出 ${s.length} 個步驟（日期都先放今天，之後在案子裡改）：<br>` + s.map(x => '・' + esc(x.split(PLACE_TOKEN).join(pl || '（地點）'))).join('<br>') : '空白的案子，建立後再一步一步加。'; };
+  const autoName = () => { const tp = S.tpls.find(x => x.id === tplId), pl = $('ncP').value.trim();
+    if (src) { $('ncN').value = (src.place ? src.title.split(src.place).join(pl) : src.title); } else if (tp && !$('ncN').dataset.typed) $('ncN').value = tp.title.split(PLACE_TOKEN).join(pl).trim(); };
+  if ($('ncT')) $('ncT').querySelectorAll('[data-tp]').forEach(b => b.onclick = () => { tplId = b.dataset.tp; $('ncT').querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === b)); autoName(); prev(); });
+  $('ncP').oninput = () => { autoName(); prev(); };
+  $('ncN').oninput = () => { $('ncN').dataset.typed = 1; };
+  prev();
+  $('ncOk').onclick = () => {
+    const pl = $('ncP').value.trim(), name = $('ncN').value.trim() || (pl ? pl + ' 案子' : '');
+    if (!name) return toast('請寫案子名稱或地點');
+    const c = { id: uid(), title: name, place: pl, created: today() }; S.cases.unshift(c);
+    stepsFrom().forEach((x, i) => S.entries.unshift({ id: uid(), cid: c.id, ord: i + 1, d: today(), tm: '', text: fixLine(x.split(PLACE_TOKEN).join(pl)), ok: false, cal: false, mail: false, people: [] }));
+    save(); closeSheet(); renderList(); openCase(c.id); toast('案子建好了');
+  };
+}
+function saveTplSheet(c) {
+  const st = stepsOf(c);
+  openSheet(`<h3 style="margin:0">⭐ 存成範本</h3>
+    <div class="hint">把這件案子的 ${st.length} 個步驟存起來，下次「開新案子」選這個範本，換個地點就好。${c.place ? `步驟裡的「${esc(c.place)}」會換成新的地點。` : ''}</div>
+    <div class="lbl">範本名稱</div><input id="tpN" value="${esc(c.title.split(c.place || '\u0000').join('').trim() || c.title)}">
+    <div class="row" style="justify-content:flex-end"><button onclick="closeSheet()">取消</button><button class="pri" id="tpOk">存起來</button></div>`);
+  $('tpOk').onclick = () => { const n = $('tpN').value.trim(); if (!n) return toast('請寫範本名稱');
+    const tok = s => c.place ? s.split(c.place).join(PLACE_TOKEN) : s;
+    S.tpls = S.tpls.filter(x => x.name !== n); S.tpls.push({ id: uid(), name: n, title: tok(c.title), steps: st.map(e => tok(e.text)) });
+    save(); closeSheet(); toast('已存成範本「' + n + '」'); };
+}
+// 把一行放進某件案子（回溯：之後從這一行就能點回案子）
+function pickCaseSheet(e) {
+  openSheet(`<h3 style="margin:0">📁 放進哪件案子？</h3>
+    <div style="display:flex;flex-direction:column;gap:8px">${S.cases.filter(c => !caseDone(c)).map(c => `<button data-pc="${c.id}" style="text-align:left">${esc(c.title)}　<span class="hint">${prog(c).done}/${prog(c).n}</span></button>`).join('') || '<p class="hint">還沒有進行中的案子。</p>'}</div>
+    <div class="row"><button id="pcNew" style="flex:1">＋ 用這一行開一件新案子</button>${e.cid ? '<button id="pcOut" style="flex:1">移出案子</button>' : ''}</div>
+    <div class="row" style="justify-content:flex-end"><button onclick="closeSheet()">取消</button></div>`);
+  document.querySelectorAll('[data-pc]').forEach(b => b.onclick = () => { e.cid = b.dataset.pc; e.ord = nextOrd(e.cid); save(); closeSheet(); renderList(); toast('已放進案子'); });
+  $('pcNew').onclick = () => { const f = fieldsOf(e), c = { id: uid(), title: (f.place ? f.place + ' ' : '') + (f.items || f.acts || '案子').split(/[，、]/)[0], place: f.place || '', created: today() };
+    S.cases.unshift(c); e.cid = c.id; save(); closeSheet(); renderList(); openCase(c.id); toast('案子建好了，名稱可以點上面改'); };
+  if ($('pcOut')) $('pcOut').onclick = () => { delete e.cid; save(); closeSheet(); renderList(); toast('已移出案子'); };
 }
 function openSheet(h) { $('box').innerHTML = h; $('sheet').hidden = false; }
 function closeSheet() { $('sheet').hidden = true; }
@@ -594,6 +842,62 @@ $('sheet').addEventListener('pointerdown', ev => { downOnBack = ev.target.id ===
 $('sheet').onclick = ev => { if (ev.target.id === 'sheet' && downOnBack) closeSheet(); downOnBack = false; };
 $('bSet').onclick = () => setSheet();
 $('bNew').onclick = openComposer;
+$('bPaste').onclick = pasteSheet;
+/* ============ 操作教學：第一次打開時，一步一步框出畫面上的東西 ============ */
+const TOUR = [
+  { el: '#bNew', t: '＋ 記一筆', p: '做完一件事就按這裡。點地點、點東西、點做了什麼，就會組出日曆要的那一行，不用打字。' },
+  { el: '#bPaste', t: '📋 貼上', p: '在 LINE 或日曆「複製」了一段文字，按這裡就會自動放進來，一行變一筆。' },
+  { el: '#bCase2', t: '📁 開案子', p: '有好幾個步驟的事（例如退租點交、維修）開成一件案子，一步一步打勾，看得到做到哪裡。' },
+  { el: '#dash .tiles', t: '三個數字', p: '還沒做完幾筆、今天記了幾筆、這週做完幾筆。點數字可以直接列出那些紀錄。' },
+  { el: '#tools', t: '🔍 搜尋、匯出、刪除', p: '要找某一戶、某件事，或是匯出 Excel、一次刪很多筆，點這一行打開。' },
+  { el: '#pending h2, #cases h2', t: '要追的事', p: '⚠ 之前還沒做完的會排在最前面，超過 7 天會變紅。下面是進行中的案子和進度。' },
+  { el: '#days .entry, #pending .entry', t: '每一筆紀錄', p: '做完按「✓ 做完了」，後面會加上 _OK。按「更多…」可以上日曆、寄信箱、改字、放進案子。' },
+  { el: '#again h2', t: '⭐ 常用', p: '常做的事放這裡，點一下就帶入，改一改就送出。' },
+  { el: '#bSet', t: '⚙ 設定', p: '字太小可以在這裡放大；也可以管理按鈕選項、常用，下載備份。想再看這個教學，也在這裡。' }
+];
+const TOUR_KEY = (BETA ? 'worklog-beta' : 'worklog') + '-tour-done';
+let tourI = 0, tourList = [];
+/* ============ 手機的「返回」：先關掉最上面的畫面，不會直接離開工作日誌 ============ */
+let guard = false;
+function ensureGuard() { if (!guard) { try { history.pushState({ wl: 1 }, ''); guard = true; } catch (e) {} } }
+const anyOpen = () => ['tour', 'bigEd', 'sheet', 'builder', 'caseV'].some(id => !$(id).hidden);
+new MutationObserver(() => { if (anyOpen()) ensureGuard(); }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['hidden'] });
+addEventListener('popstate', () => {
+  guard = false;
+  if (!$('tour').hidden) endTour();
+  else if (!$('bigEd').hidden) $('beX').click();
+  else if (!$('sheet').hidden) closeSheet();
+  else if (!$('builder').hidden) { if (step > 0) { step--; renderBuilder(); } else closeComposer(); }
+  else if (!$('caseV').hidden) closeCase();
+  if (anyOpen()) ensureGuard();
+});
+function startTour() {
+  tourList = TOUR.filter(s => document.querySelector(s.el)); if (!tourList.length) return;
+  tourI = 0; $('tour').hidden = false; showTour();
+}
+function endTour() { $('tour').hidden = true; try { localStorage.setItem(TOUR_KEY, '1'); } catch (e) {} }
+function showTour() {
+  const s = tourList[tourI], el = document.querySelector(s.el); if (!el) return endTour();
+  el.scrollIntoView({ block: 'center' });
+  setTimeout(() => {
+    const r = el.getBoundingClientRect(), pad = 6, H = innerHeight, hole = $('tourHole'), tip = $('tourTip');
+    Object.assign(hole.style, { left: (r.left - pad) + 'px', top: (r.top - pad) + 'px', width: (r.width + pad * 2) + 'px', height: (r.height + pad * 2) + 'px' });
+    const last = tourI === tourList.length - 1;
+    tip.innerHTML = `<div class="dots">${tourList.map((_, i) => `<i class="${i === tourI ? 'on' : ''}"></i>`).join('')}</div><h4>${s.t}</h4><p>${s.p}</p>
+      <div class="row"><button id="tSkip">跳過教學</button><span style="flex:1"></span>${tourI ? '<button id="tPrev">← 上一步</button>' : ''}<button class="pri" id="tNext">${last ? '開始使用' : '下一步 →'}</button></div>`;
+    // 框在下半部，說明放上面；框在上半部，說明放下面
+    const below = r.top + r.height / 2 < H / 2;
+    tip.style.top = below ? Math.min(H - 260, r.bottom + pad + 14) + 'px' : 'auto';
+    tip.style.bottom = below ? 'auto' : Math.max(12, H - r.top + pad + 14) + 'px';
+    $('tSkip').onclick = endTour;
+    if ($('tPrev')) $('tPrev').onclick = () => { tourI--; showTour(); };
+    $('tNext').onclick = () => { if (last) return endTour(); tourI++; showTour(); };
+  }, 120);
+}
+addEventListener('resize', () => { if (!$('tour').hidden) showTour(); });
+$('bCase2').onclick = () => newCaseSheet();
+setTimeout(() => { let done = false; try { done = !!localStorage.getItem(TOUR_KEY); } catch (e) {} if (!done) startTour(); }, 400);
+if (BETA) document.querySelector('header h1').insertAdjacentHTML('afterend', '<span class="badge" style="font-size:13px">試用版</span>');
 // 以前記的「新店機廠站新店機廠站…」整理成一個
 S.entries.forEach(e => { const f = fixLine(e.text); if (f !== e.text) { e.text = f; save(); } });
 applyZoom();
