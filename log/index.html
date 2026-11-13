@@ -131,7 +131,7 @@ details.tools summary{margin:4px 0;color:var(--ink);font-size:15px}
 </style>
 </head>
 <body>
-<header><h1>📝 工作日誌</h1><span class="hint" title="版本">v18・11/12</span><span style="flex:1"></span><button class="sm" id="bSet">⚙ 設定</button></header>
+<header><h1>📝 工作日誌</h1><span class="hint" title="版本">v19・11/13</span><span style="flex:1"></span><button class="sm" id="bSet">⚙ 設定</button></header>
 <div class="wrap">
   <div id="dash"></div>
   <div id="pending"></div>
@@ -234,6 +234,7 @@ function renderBuilder() {
     <div class="go"><button class="pri" id="gSave">✓ 記下來</button><button class="cal" id="gCal">📅 上日曆</button><button id="gMail">✉️ 寄信箱</button></div>
     <div class="hint">三個都會記到清單裡。上日曆、寄信箱會順便打開日曆或信箱。</div>`;
   $('builder').innerHTML = `<div class="top"><div class="bar"><button class="backbtn" id="cX">← 回首頁</button><div class="steps">${STEPS.map((_, i) => `<i class="${i <= step ? 'on' : ''}"></i>`).join('')}</div></div>
+      ${B.editId ? '<div class="casechip">✎ 正在修改原本那一筆，改完按「✓ 記下來」就會更新它</div>' : ''}
       <div class="live ${L ? '' : 'empty'}" id="live">${L ? esc(L) : '點選項，這裡會組出日曆要的那一行'}</div></div>
     <div class="body"><div class="q">${step + 1}. ${STEPS[step]}</div>${body}</div>
     ${step < 3 ? `<div class="foot">${step ? '<button id="cPrev">← 上一步</button>' : ''}<button class="pri" id="cNext">${step === 2 ? '下一步：看一下' : '下一步 →'}</button></div>` : `<div class="foot"><button id="cPrev" style="flex:1">← 上一步</button><button class="pri" id="gSave2" style="flex:2">✓ 記下來</button></div>`}`;
@@ -283,9 +284,35 @@ function commit(quiet) {
   const n0 = new Date(), day = ($('cD') && $('cD').value) || B.d || today(), cid = B.cid;
   const e = { id: uid(), cid: cid || undefined, ord: cid ? nextOrd(cid) : undefined, d: day, tm: day === today() ? `${pad(n0.getHours())}:${pad(n0.getMinutes())}` : '', text: t.replace(/_OK$/, ''), ok: /_OK$/.test(t), cal: false, mail: false, people: B.people.slice(),
     f: B.edited == null ? { place: placesAll().join('、'), who: B.who, items: B.items.join('、'), acts: [B.acts.join('、'), B.extra].filter(Boolean).join('，'), mates: B.mates.join('、') } : null };
+  if (B.editId) { // 修改原本那一筆：只換內容，做完沒、上過日曆沒、時間、順序都保留
+    const o = find(B.editId);
+    if (o) { const wasCal = o.cal; o.text = e.text; o.f = e.f; o.people = e.people; if (o.d !== day) { o.d = day; o.tm = ''; } save(); B = blank(); closeComposer(); renderList(); if (o.cid) openCase(o.cid);
+      toast(wasCal ? '已更新。日曆上那筆不會自己變，要的話到日曆改標題' : '已更新'); return o; }
+  }
   S.entries.unshift(e); save(); B = blank(); closeComposer(); renderList();
   if (cid) openCase(cid); else scrollTo({ top: 0 });
   if (!quiet) toast(cid ? '已加到案子' : '記下來了'); return e;
+}
+// 把已經記過的一筆，放回「記一筆」的四個步驟裡，之前略過的格子可以補上
+function editViaComposer(e) {
+  const f = fieldsOf(e), split = (s, re) => String(s || '').split(re).map(x => x.trim()).filter(Boolean);
+  B = blank(); B.editId = e.id; B.cid = e.cid || ''; B.d = e.d; B.people = (e.people || []).map(x => ({ ...x }));
+  const site = siteNames().find(n => e.text.startsWith(n)); if (site) B.site = site;
+  B.places = split(f.place, /、/); B.who = f.who || '';
+  const ensure = (k, arr) => arr.forEach(v => { if (!S.conf[k].includes(v)) S.conf[k].push(v); });
+  B.items = split(f.items, /、/); ensure('items', B.items);
+  // 「做了什麼」：第一段裡認得的動作變成按鈕，其他當補充
+  const segs = split(f.acts, /，/), first = split(segs[0], /、/), known = first.filter(x => S.conf.acts.includes(x));
+  if (e.f && f.acts) { B.acts = first; ensure('acts', first); B.extra = segs.slice(1).join('，'); }
+  else { // 貼上或舊的紀錄：認得的字放回事項、做了什麼的按鈕，其餘當補充
+    const toks = split(f.acts, /[，、]/), rest = [];
+    toks.forEach(x => { if (S.conf.items.includes(x)) B.items.push(x); else if (S.conf.acts.includes(x)) B.acts.push(x); else rest.push(x); });
+    B.extra = rest.join('，'); }
+  B.mates = split(f.mates, /、/); ensure('mates', B.mates);
+  // 原本自己改過字、組不回同一行的，就保留原本的字，按「照選的重組」才換
+  const rebuilt = line();
+  if (fixLine(rebuilt) !== fixLine(e.text)) B.edited = e.text;
+  step = 0; $('builder').hidden = false; renderBuilder();
 }
 function addOpt(k) {
   const name = { places: '地點', items: '事項', acts: '做了什麼', mates: '一起的人' }[k];
@@ -421,13 +448,15 @@ function mailSheet(e) {
 function moreSheet(e) {
   openSheet(`<div class="go"><button class="cal" id="mCal">📅 上日曆</button><button id="mMail">✉️ 寄信箱</button><button id="mCopy">📋 複製</button></div>
     <div class="row"><button id="mFav" style="flex:1">⭐ 加到常用</button><button id="mCase" style="flex:1">📁 ${e.cid && caseOf(e.cid) ? '換案子' : '放進案子'}</button></div>
-    <h3 style="margin:6px 0 0">修改這一行</h3><textarea id="mT" class="big" rows="3" data-title="修改這一行">${esc(e.text)}</textarea><div class="tapedit">點一下會打開大字編輯</div>
+    <button class="pri" id="mStep">✎ 用點選的方式補資料（對象、事項、做了什麼…）</button>
+    <h3 style="margin:6px 0 0">或直接改這一行的字</h3><textarea id="mT" class="big" rows="3" data-title="修改這一行">${esc(e.text)}</textarea><div class="tapedit">點一下會打開大字編輯</div>
     <div class="row"><span class="hint">日期</span><input type="date" id="mD" value="${e.d}" style="width:auto"></div>
     <div class="hint">這件事要聯絡的人</div><div id="mPpl"></div>
     <div class="row"><button class="link" id="mDel" style="color:#b0392b;margin-right:auto">刪除</button><button onclick="closeSheet()">取消</button><button class="pri" id="mOk">儲存</button></div>`);
   const ppl = (e.people || []).slice(); pplEditor($('mPpl'), ppl);
   $('mFav').onclick = () => { const tx = fixLine(e.text); if (!S.fav.some(f => f.text === tx)) S.fav.push({ id: uid(), text: tx }); save(); closeSheet(); renderList(); toast('已加到常用'); };
   $('mCase').onclick = () => pickCaseSheet(e);
+  $('mStep').onclick = () => { closeSheet(); editViaComposer(e); };
   $('mCal').onclick = () => calSheet(e); $('mMail').onclick = () => { closeSheet(); mailSheet(e); }; $('mCopy').onclick = () => { closeSheet(); copy(full(e)); };
   $('mOk').onclick = () => { e.text = $('mT').value.trim().replace(/_OK$/, '') || e.text; e.d = $('mD').value || e.d; e.people = ppl; save(); closeSheet(); renderList(); if (openCaseId) openCase(openCaseId); };
   $('mDel').onclick = () => { if (!$('mDel').dataset.s) { $('mDel').dataset.s = 1; $('mDel').textContent = '再按一次確定刪除'; return; } S.entries = S.entries.filter(x => x !== e); save(); closeSheet(); renderList(); if (openCaseId) openCase(openCaseId); };
