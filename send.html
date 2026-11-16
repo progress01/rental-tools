@@ -87,7 +87,7 @@
   .card{display:grid;grid-template-columns:54px 1fr;gap:10px;align-items:start}
   .card .side{display:flex;flex-direction:column;align-items:center;gap:6px}
   .card .main{min-width:0;display:flex;flex-direction:column;gap:8px}
-  .card .num{font-size:17px;font-weight:800;color:#444;font-variant-numeric:tabular-nums;background:#eef1f4;border-radius:8px;min-width:40px;text-align:center;padding:1px 4px}
+  .card .num{max-width:54px;overflow-wrap:anywhere;font-size:17px;font-weight:800;color:#444;font-variant-numeric:tabular-nums;background:#eef1f4;border-radius:8px;min-width:40px;text-align:center;padding:1px 4px}
   .st{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:12px;font-weight:700;line-height:1.2;text-align:center;color:var(--muted)}
   .st i{width:18px;height:18px;border-radius:50%;background:#fff;border:2.5px solid #9aa5a9;display:block}
   .st.ok{color:var(--ok)} .st.ok i{background:var(--ok);border-color:var(--ok)}
@@ -372,6 +372,8 @@ function parseRoster(sheets) {
     const row = sheet.rows[r]; if (!row) continue;
     const g = n => map[n] == null ? null : row[map[n]];
     let addr = str(g('物件地址'));
+    // 表格最下面的統計列（租金欠款／車位清潔費／總計（戶數…），電話欄是戶數）不是住戶，跳過
+    if (!addr && isSummaryRow(g)) { lastKey = null; continue; }
     // 合併表裡同一戶的第二列沒有地址，接在上一戶
     if (!addr && lastKey && (str(g('連絡電話')) || str(g('承租人')) || itemLabel(g))) addr = roster[lastKey].addr;
     if (!addr) continue;
@@ -464,6 +466,8 @@ window.addEventListener('dragover', e => e.preventDefault());
 window.addEventListener('drop', e => { e.preventDefault(); const f = [...e.dataTransfer.files].find(f => /\.xlsx?m?$/i.test(f.name)); if (f) loadFile(f); });
 
 /* ============ 項目（租金、房屋管理費、延遲金…） ============ */
+const numCell = v => isNum(v) || /^\d+$/.test(str(v));
+const isSummaryRow = g => ['編號', '序號', '項次'].some(n => str(g(n)) && !numCell(g(n))) || ['編號', '基地', '承租人', '項目'].some(n => /總計|合計|小計|戶數/.test(str(g(n))));
 const itemLabel = g => str(g('項目') ?? g('項目名稱') ?? '');
 const itemType = l => str(l).replace(/\s*#\s*\d+$/, '').trim();
 let itemFilter = '';
@@ -490,7 +494,8 @@ function itemPicker(o, onChange, a) {
 /* ============ 自己維護的項目（例如延遲金）：勾選哪幾戶有，跨月份保留 ============ */
 // 照放入的檔案排序（跟紙本對得起來）；舊資料沒有順序的才照地址
 const byFileOrder = (a, b) => (a.ord ?? 1e9) - (b.ord ?? 1e9) || collator.compare(shortAddr(a.addr), shortAddr(b.addr));
-const seqOf = o => { const n = o.extra && (o.extra['編號'] ?? o.extra['序號'] ?? o.extra['項次']); return n != null && n !== '' ? n : o.ord; };
+// 編號：用表上的數字；不是單純數字（舊資料混到統計列）就用第幾筆
+const seqOf = o => { const n = o.extra && (o.extra['編號'] ?? o.extra['序號'] ?? o.extra['項次']); const f = n == null ? '' : String(n).split('／')[0].trim(); return /^\d+$/.test(f) ? f : o.ord; };
 const owes = o => o.amount > 0 || !!o.virtual || (o.items || []).some(l => S.customItems.includes(itemType(l)));
 function applyTags() {
   for (const [k, o] of Object.entries(S.roster)) {
@@ -582,14 +587,19 @@ function render() {
   }
   const qs = query.normalize('NFKC').toLowerCase().split(/\s+/).filter(Boolean);
   const match = o => !qs.length || qs.every(q => (o.addr + ' ' + o.tenant + ' ' + (seqOf(o) ?? '') + ' ' + o.phones.join(' ') + ' ' + shownCols().map(h => (o.extra || {})[h] ?? '').join(' ')).normalize('NFKC').toLowerCase().replace(/-/g, '').includes(q.replace(/-/g, '')));
-  const owe = all.filter(owes);
-  const doneN = owe.filter(o => delivered(o.key)).length;
-  $('stat').textContent = `有欠款 ${owe.length} 戶｜已${P.name} ${doneN}｜還沒 ${owe.length - doneN}`;
-  const tl = [[owe.length - doneN, `還沒${P.name}`], [doneN, `已${P.name}`], [all.length, '全部']];
-  chips.forEach((x, i) => x.innerHTML = `<b>${tl[i][0]}</b><span>${esc(tl[i][1])}</span>`);
   const types = itemTypes();
   if (itemFilter && !types.includes(itemFilter)) itemFilter = '';
-  $('itemChips').innerHTML = types.length > 1 ? ['', ...types].map(x => `<button class="chip ${x === itemFilter ? 'on' : ''}" data-ty="${esc(x)}">${x ? esc(x) : '全部項目'}</button>`).join('') : '';
+  const hasType = (o, t) => !t || (o.items || []).some(l => itemType(l) === t);
+  const inItem = all.filter(o => hasType(o, itemFilter));
+  const owe = inItem.filter(owes);
+  const doneN = owe.filter(o => delivered(o.key)).length;
+  $('stat').textContent = `有欠款 ${owe.length} 戶｜已${P.name} ${doneN}｜還沒 ${owe.length - doneN}`;
+  const tl = [[owe.length - doneN, `還沒${P.name}`], [doneN, `已${P.name}`], [inItem.length, '全部']];
+  chips.forEach((x, i) => x.innerHTML = `<b>${tl[i][0]}</b><span>${esc(tl[i][1])}</span>`);
+  // 每個項目按鈕上標出：目前的篩選（還沒／已／全部）下有幾戶
+  const passSt = o => filter === 'all' ? true : owes(o) && (filter === 'done' ? delivered(o.key) : (!delivered(o.key) || justDone.has(o.key)));
+  const cntOf = t => all.filter(o => hasType(o, t) && passSt(o)).length;
+  $('itemChips').innerHTML = types.length > 1 ? ['', ...types].map(x => `<button class="chip ${x === itemFilter ? 'on' : ''}" data-ty="${esc(x)}">${x ? esc(x) : '全部項目'} <b>${cntOf(x)}</b></button>`).join('') : '';
   $('itemChips').querySelectorAll('[data-ty]').forEach(c => c.onclick = () => { itemFilter = c.dataset.ty; render(); saveUI(); });
   const byItem = o => !itemFilter || (o.items || []).some(l => itemType(l) === itemFilter);
   const shown = all.filter(byItem).filter(o => filter === 'all' ? true : owes(o) && (filter === 'done' ? delivered(o.key) : (!delivered(o.key) || justDone.has(o.key)))).filter(match);
