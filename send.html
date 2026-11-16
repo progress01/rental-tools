@@ -42,7 +42,6 @@
   .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
   .card.done{border-color:#9fd0ae;box-shadow:inset 4px 0 0 var(--ok)}
   .card .addr{font-size:18px;font-weight:700;line-height:1.35}
-  .card .addr .seq{display:inline-block;min-width:30px;margin-right:8px;padding:1px 6px;border-radius:8px;background:#eef1f4;color:#555;font-size:15px;text-align:center;font-variant-numeric:tabular-nums}
   .card .meta{display:flex;gap:10px;flex-wrap:wrap;font-size:14px;color:var(--muted)}
   .card .meta b{color:var(--ink)}
   .money{color:var(--danger);font-weight:700}
@@ -78,6 +77,30 @@
   table.log{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;font-size:14px}
   table.log th,table.log td{padding:7px 9px;border-bottom:1px solid #eceee9;text-align:left;vertical-align:top}
   table.log th{background:#f3f4f1;white-space:nowrap}
+  .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
+  .tile{display:flex;flex-direction:column;align-items:flex-start;gap:0;padding:8px 12px;border-radius:14px;background:#fff;border:1.5px solid var(--line);text-align:left}
+  .tile b{font-size:26px;line-height:1.2}
+  .tile span{font-size:14px;color:var(--muted)}
+  .tiles .tile.chip,.tiles .tile.chip.on{background:#fff;color:var(--ink);font-weight:400}
+  .tiles .tile.chip.on{border-color:var(--ink);box-shadow:inset 0 0 0 2px var(--ink);background:#f6f7f4}
+  .tile.tw b{color:var(--warn)} .tile.tk b{color:var(--ok)}
+  .card{display:grid;grid-template-columns:54px 1fr;gap:10px;align-items:start}
+  .card .side{display:flex;flex-direction:column;align-items:center;gap:6px}
+  .card .main{min-width:0;display:flex;flex-direction:column;gap:8px}
+  .card .num{font-size:17px;font-weight:800;color:#444;font-variant-numeric:tabular-nums;background:#eef1f4;border-radius:8px;min-width:40px;text-align:center;padding:1px 4px}
+  .st{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:12px;font-weight:700;line-height:1.2;text-align:center;color:var(--muted)}
+  .st i{width:18px;height:18px;border-radius:50%;background:#fff;border:2.5px solid #9aa5a9;display:block}
+  .st.ok{color:var(--ok)} .st.ok i{background:var(--ok);border-color:var(--ok)}
+  .st.fail{color:var(--danger)} .st.fail i{background:var(--danger);border-color:var(--danger)}
+  .st.part{color:var(--warn)} .st.part i{background:linear-gradient(90deg,var(--warn) 50%,#fff 50%);border-color:var(--warn)}
+  .card.fail{border-color:#e6b4aa;box-shadow:inset 4px 0 0 var(--danger)}
+  .card.part{border-color:#ecd28f;box-shadow:inset 4px 0 0 var(--warn)}
+  .acts2{display:grid;grid-template-columns:1.25fr 1fr 1fr auto;gap:6px}
+  .acts2 button{padding:10px 4px;font-size:15px}
+  .acts2 button.ok{font-size:16px}
+  .abar{position:fixed;left:0;right:0;bottom:0;z-index:30;background:#fff;border-top:1px solid var(--line);padding:8px 10px calc(8px + env(safe-area-inset-bottom));display:flex;gap:8px;justify-content:center}
+  .abar > *{flex:1;max-width:260px;padding:12px 8px;font-size:17px;font-weight:700;border-radius:12px}
+  .abar #bMenu{flex:0 0 64px}
   .tabs{display:flex;gap:6px;margin-bottom:10px}
   .tabs button{border-radius:999px}
   .tabs button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
@@ -89,32 +112,31 @@
     <h1>📮 送信登記</h1>
     <span class="hint" id="monthLbl"></span>
     <span class="grow"></span>
-    <label class="btn primary" title="放入催收表，或另一台傳過來的送信紀錄">📂 放入檔案<input type="file" id="fileIn"></label>
-    <button id="bExport" title="把名單和紀錄存成 Excel，傳到另一台（手機／電腦）">📤 傳到另一台</button>
-    <button id="bMenu">⋯</button>
   </div>
 </header>
+<nav class="abar">
+  <label class="btn primary" title="放入催收表，或另一台傳過來的送信紀錄">📂 放入檔案<input type="file" id="fileIn"></label>
+  <button id="bExport" title="把名單和紀錄存成 Excel，傳到另一台（手機／電腦）">📤 傳到另一台</button>
+  <button id="bMenu" aria-label="更多">⋯</button>
+</nav>
 
 <div class="wrap">
   <div id="syncbar"></div>
   <div id="pendbar"></div>
   <div class="tabs" id="tabs">
     <button class="on" data-tab="list">名單</button>
-    <button data-tab="log">工作日誌</button>
+    <button data-tab="log">📋 紀錄</button>
   </div>
   <div id="viewList">
-    <div class="tools">
-      <input type="search" id="q" placeholder="🔍 搜尋地址、姓名、電話，例如：153 20" style="flex:1;min-width:220px">
+    <div class="tiles" id="chips">
+      <button class="tile tw chip on" data-f="todo"><b>0</b><span>還沒處理</span></button>
+      <button class="tile tk chip" data-f="done"><b>0</b><span>已處理</span></button>
+      <button class="tile chip" data-f="all"><b>0</b><span>全部</span></button>
     </div>
     <div class="tools">
-      <div class="chips" id="chips">
-        <button class="chip on" data-f="todo">還沒處理</button>
-        <button class="chip" data-f="done">已處理</button>
-        <button class="chip" data-f="all">全部</button>
-      </div>
-      <span class="grow"></span>
-      <span class="stat" id="stat"></span>
+      <input type="search" id="q" placeholder="🔍 找地址、姓名、電話、編號，例：153 20" style="flex:1;min-width:220px">
     </div>
+    <span class="stat hidden" id="stat"></span>
     <div class="tools">
       <div class="chips" id="itemChips"></div>
     </div>
@@ -549,21 +571,22 @@ function render() {
   $('monthLbl').textContent = S.title ? `名單：${S.title}` : '';
   const chips = document.querySelectorAll('#chips .chip');
   chips.forEach(x => x.classList.toggle('on', x.dataset.f === filter));
-  chips[0].textContent = `還沒${P.name}`; chips[1].textContent = `已${P.name}`;
   const n = unsynced();
   $('syncbar').innerHTML = !all.length ? '' : n
     ? `<div class="syncbar">⚠ 有 <b>${n}</b> 筆紀錄還沒傳到${IS_PHONE ? '電腦' : '手機'}。<span class="grow"></span><button class="small primary" onclick="exportFile()">📤 現在傳</button></div>`
-    : `<div class="syncbar clean">✓ 紀錄都已經傳出去了${S.lastExport ? `（${fmtTime(S.lastExport)}）` : ''}</div>`;
+    : ''; // 都傳出去了就不佔位置
   const list = $('list');
   if (!all.length) {
     list.innerHTML = `<div class="empty" style="grid-column:1/-1"><b>先放入名單</b>按右上角「📂 放入檔案」，選這個月的催收表（或合併表）Excel<br>（電腦上也可以直接把檔案拖進來）。<p class="hint">如果是另一台傳過來的「送信紀錄」檔案，一樣用「放入檔案」。</p>${IS_PHONE ? '<p class="hint">LINE 收到的檔案：在 LINE 點檔案 →「儲存」，再回來按「📂 放入檔案」，選單裡點「最近」就會在最上面。</p>' : ''}</div>`;
     $('stat').textContent = ''; renderLog(); return;
   }
   const qs = query.normalize('NFKC').toLowerCase().split(/\s+/).filter(Boolean);
-  const match = o => !qs.length || qs.every(q => (o.addr + ' ' + o.tenant + ' ' + o.phones.join(' ') + ' ' + shownCols().map(h => (o.extra || {})[h] ?? '').join(' ')).normalize('NFKC').toLowerCase().replace(/-/g, '').includes(q.replace(/-/g, '')));
+  const match = o => !qs.length || qs.every(q => (o.addr + ' ' + o.tenant + ' ' + (seqOf(o) ?? '') + ' ' + o.phones.join(' ') + ' ' + shownCols().map(h => (o.extra || {})[h] ?? '').join(' ')).normalize('NFKC').toLowerCase().replace(/-/g, '').includes(q.replace(/-/g, '')));
   const owe = all.filter(owes);
   const doneN = owe.filter(o => delivered(o.key)).length;
   $('stat').textContent = `有欠款 ${owe.length} 戶｜已${P.name} ${doneN}｜還沒 ${owe.length - doneN}`;
+  const tl = [[owe.length - doneN, `還沒${P.name}`], [doneN, `已${P.name}`], [all.length, '全部']];
+  chips.forEach((x, i) => x.innerHTML = `<b>${tl[i][0]}</b><span>${esc(tl[i][1])}</span>`);
   const types = itemTypes();
   if (itemFilter && !types.includes(itemFilter)) itemFilter = '';
   $('itemChips').innerHTML = types.length > 1 ? ['', ...types].map(x => `<button class="chip ${x === itemFilter ? 'on' : ''}" data-ty="${esc(x)}">${x ? esc(x) : '全部項目'}</button>`).join('') : '';
@@ -573,7 +596,7 @@ function render() {
   list.innerHTML = shown.length ? shown.map(cardHTML).join('') : `<div class="empty" style="grid-column:1/-1">${qs.length ? '找不到符合的' : filter === 'todo' ? '🎉 都處理完了' : '沒有資料'}</div>`;
   list.querySelectorAll('[data-act]').forEach(b => b.onclick = () => act(b.dataset.act, b.dataset.key));
   list.querySelectorAll('[data-del]').forEach(x => x.onclick = () => delEvent(x.dataset.del));
-  list.querySelectorAll('[data-tagk]').forEach(x => x.onclick = () => tagSheet(S.roster[x.dataset.tagk]));
+  list.querySelectorAll('[data-cmore]').forEach(x => x.onclick = () => cardMore(S.roster[x.dataset.cmore]));
   list.querySelectorAll('[data-ph]').forEach(x => x.onclick = ev => { ev.preventDefault(); showPhoto(x.dataset.ph); });
   renderLog(); pendBar();
 }
@@ -595,20 +618,45 @@ function cardHTML(o) {
   const seen = new Set(), badges = its.length ? '' : evs.filter(e => !seen.has(e.kind) && seen.add(e.kind)).slice(0, 4).map(badge).join('');
   const others = S.actions.filter(a => a.id !== P.id && a.type !== 'sms' && a.type !== 'call' && canDo(a, o));
   const smsA = A('sms'), callA = A('call');
-  return `<div class="card ${done ? 'done' : ''}">
-    <div class="addr">${seqOf(o) != null ? `<span class="seq">${esc(String(seqOf(o)))}</span>` : ''}${esc(shortAddr(o.addr))}</div>
+  const n = seqOf(o);
+  const st = owes(o) ? statusOf(o) : null;
+  return `<div class="card ${done ? 'done' : st ? st.c : ''}">
+    <div class="side">${n != null ? `<span class="num">${esc(String(n))}</span>` : ''}${st ? `<span class="st ${st.c}"><i></i>${esc(st.t)}</span>` : ''}</div>
+    <div class="main">
+    <div class="addr">${esc(shortAddr(o.addr))}</div>
     <div class="meta">${metaHTML(o)}</div>
     ${its.length ? `<div class="items">${its.map(l => itemStatusHTML(o, l)).join('')}</div>` : ''}
     ${badges ? `<div class="badges">${badges}</div>` : ''}
-    <div class="acts">
-      ${canDo(P, o) ? `<button class="${done ? '' : 'ok'}" data-act="${P.id}" data-key="${esc(o.key)}">${esc(P.icon)} ${done ? '再記一次' : esc(P.name)}</button>` : '<span></span>'}
+    <div class="acts2">
+      ${canDo(P, o) ? `<button class="${done ? '' : 'ok'}" data-act="${P.id}" data-key="${esc(o.key)}">${esc(P.icon)} ${done ? '再記' : esc(P.name)}</button>` : '<span></span>'}
       ${canDo(smsA, o) ? `<button data-act="sms" data-key="${esc(o.key)}" ${mob ? '' : 'disabled title="沒有手機號碼"'}>💬 簡訊</button>` : '<span></span>'}
       ${canDo(callA, o) ? `<button data-act="call" data-key="${esc(o.key)}" ${o.phones.length ? '' : 'disabled'}>📞 電話</button>` : '<span></span>'}
+      <button data-cmore="${esc(o.key)}" aria-label="更多">⋯</button>
     </div>
-    <div class="row" style="gap:6px">${others.map(a => `<button class="small" data-act="${a.id}" data-key="${esc(o.key)}">${esc(a.icon)} ${esc(a.name)}</button>`).join('')}<button class="small" data-tagk="${esc(o.key)}">🏷 ${S.customItems.length === 1 ? esc(S.customItems[0]) : '其他項目'}</button></div>
     ${o.virtual ? '<div class="hint">（這個月的合併表沒有這一戶，是自己標的項目）</div>' : ''}
     ${evs.length ? `<details><summary class="more">紀錄 ${evs.length} 筆</summary><div class="hist">${evs.map(e => `<div>${fmtTime(e.ts)}　${esc(A(e.kind).name)}${(e.items || []).length && its.length > 1 ? `（${esc(e.items.join('、'))}）` : ''}${e.how ? '：' + esc(e.how) : ''}${e.note ? '　' + esc(e.note) : ''}${e.hasPhoto ? ` <a href="#" data-ph="${e.id}">📷</a>` : ''}<span class="x" data-del="${e.id}" title="刪除這筆">✕</span></div>`).join('')}</div></details>` : ''}
+    </div>
   </div>`;
+}
+// 卡片左邊的狀態：從紀錄算出來，不是打勾。已通知／通知一部分／沒送到／還沒
+function statusOf(o) {
+  const P = primaryA();
+  if (delivered(o.key)) return { c: 'ok', t: '已' + P.name };
+  const its = (o.items || []).filter(l => applicable(P, l));
+  const okIt = its.filter(l => evsForItem(o.key, l).some(e => e.kind === S.primary && !isFail(e) && inRoundFor(e, l)));
+  if (okIt.length) return { c: 'part', t: `${P.name}${okIt.length}/${its.length}` };
+  const last = evOf(o.key).find(e => e.kind === S.primary && inRound(e));
+  if (last && isFail(last)) return { c: 'fail', t: '沒送到' };
+  return { c: 'none', t: '還沒' + P.name };
+}
+// 卡片的「更多…」：不常用的動作收在這裡
+function cardMore(o) {
+  const P = primaryA(), others = S.actions.filter(a => a.id !== P.id && a.type !== 'sms' && a.type !== 'call' && canDo(a, o));
+  openSheet(`<h3>${esc(shortAddr(o.addr))}</h3><div class="hint">${esc(o.tenant || '')}</div>
+    <div class="opts">${others.map(a => `<button data-oa="${a.id}">${esc(a.icon)} ${esc(a.name)}</button>`).join('')}<button data-otag="1">🏷 ${S.customItems.length === 1 ? esc(S.customItems[0]) : '其他項目'}</button></div>
+    <div class="row"><span class="grow"></span><button onclick="closeSheet()">關閉</button></div>`);
+  document.querySelectorAll('[data-oa]').forEach(b => b.onclick = () => { closeSheet(); act(b.dataset.oa, o.key); });
+  document.querySelector('[data-otag]').onclick = () => { closeSheet(); tagSheet(o); };
 }
 document.querySelectorAll('#chips .chip').forEach(c => c.onclick = () => { filter = c.dataset.f; justDone.clear(); render(); saveUI(); });
 $('q').oninput = () => { query = $('q').value; render(); saveUI(); };
