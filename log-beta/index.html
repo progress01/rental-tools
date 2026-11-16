@@ -22,6 +22,7 @@ h2{font-size:14px;color:var(--muted);margin:18px 0 6px;letter-spacing:.05em}
 .chip{font:inherit;font-size:15px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:5px 12px;cursor:pointer}
 .chip.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
 .chip.add{border-style:dashed;color:var(--muted)}
+.chip.add.on{border-style:solid;color:#fff}
 .row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 input,textarea{font:inherit;font-size:18px;color:inherit;border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:#fff;width:100%;min-width:0}
 input.num{width:64px;text-align:center}
@@ -138,7 +139,7 @@ details.tools summary{margin:4px 0;color:var(--ink);font-size:15px}
 </style>
 </head>
 <body>
-<header><h1>📝 工作日誌</h1><span class="hint" title="版本">v20・11/15</span><span style="flex:1"></span><button class="sm" id="bSet">⚙ 設定</button></header>
+<header><h1>📝 工作日誌</h1><span class="hint" title="版本">v21・11/16</span><span style="flex:1"></span><button class="sm" id="bSet">⚙ 設定</button></header>
 <div class="wrap">
   <div id="dash"></div>
   <div id="pending"></div>
@@ -799,7 +800,7 @@ function openCase(id) {
   box.querySelectorAll('[data-sd]').forEach(i => i.onchange = () => { const e = find(i.dataset.sd); if (i.value) { e.d = i.value; e.tm = ''; save(); renderList(); openCase(id); } });
   box.querySelectorAll('[data-cal]').forEach(b => b.onclick = () => calSheet(find(b.dataset.cal)));
   box.querySelectorAll('[data-more]').forEach(b => b.onclick = () => moreSheet(find(b.dataset.more)));
-  $('cvAdd').onclick = () => { if (st.length) return nextSheet(c, st[st.length - 1], false); B = blank(); B.cid = c.id; if (c.place) B.places = [c.place]; step = 0; $('builder').hidden = false; renderBuilder(); };
+  $('cvAdd').onclick = () => { if (st.length) return nextSheet(c, st[st.length - 1], false); B = blank(); B.cid = c.id; if (c.site && siteNames().includes(c.site)) B.site = c.site; if (c.place) B.places = [c.place]; step = 0; $('builder').hidden = false; renderBuilder(); };
   $('cvCopy').onclick = () => newCaseSheet({ fromCase: c });
   $('cvPaste').onclick = pasteSheet;
   $('cvTpl').onclick = () => saveTplSheet(c);
@@ -894,8 +895,10 @@ function newCaseSheet(opt = {}) {
   openSheet(`<h3 style="margin:0">${src ? '⧉ 複製成新案子' : '📁 開新案子'}</h3>
     ${src ? `<div class="hint">從「${esc(src.title)}」複製 ${stepsOf(src).length} 個步驟，地點換成新的；複製出來的是獨立的一份，改這件不會影響原本那件。</div>` :
       `<div class="lbl">用範本（可不選）</div><div class="chips" id="ncT"><button class="chip on" data-tp="">不用範本</button>${S.tpls.map(x => `<button class="chip" data-tp="${x.id}">${esc(x.name)}</button>`).join('')}</div>`}
-    <div class="lbl">站／社區</div><div class="chips" id="ncS">${siteNames().map((n, i) => `<button class="chip ${n === (S.conf.lastSite && siteNames().includes(S.conf.lastSite) ? S.conf.lastSite : siteNames()[0]) ? 'on' : ''}" data-ns="${esc(n)}">${esc(n)}</button>`).join('')}</div>
-    <div class="lbl">地點</div><input id="ncP" placeholder="例：161號6樓之1" value="">
+    <div class="lbl">在哪裡（站／社區）</div><div class="chips" id="ncS">${siteNames().map(n => `<button class="chip" data-ns="${esc(n)}">${esc(n)}</button>`).join('')}<button class="chip add" id="ncSO">＋ 其他地方</button></div>
+    <input id="ncSN" placeholder="地方名稱，例：美河市、某某社區、某某管委會" hidden>
+    <div class="chips" id="ncB"></div>
+    <div class="lbl" id="ncPL">地點</div><input id="ncP" value="">
     <div class="lbl">什麼東西、什麼問題（可不填）</div><input id="ncI" placeholder="例：面盆破損" value="">
     <div class="lbl">案子名稱</div><input id="ncN" placeholder="例：161號6樓之1 退租點交" value="${src ? esc(src.title.split(src.place || '\u0000').join('')) : ''}">
     <div class="hint" id="ncPrev"></div>
@@ -903,21 +906,40 @@ function newCaseSheet(opt = {}) {
   const prev = () => { const pl = $('ncP').value.trim(), s = stepsFrom();
     const L = s.map(tplLabel).filter(Boolean);
     $('ncPrev').innerHTML = L.length ? `先建第 1 步「<b>${esc(L[0])}</b>」，排今天。<br>${L.length > 1 ? `之後每做完一步，會提示下一步（${L.slice(1).map(esc).join(' → ')}），日期到時候再選。` : ''}` : '空白的案子，建立後再一步一步加。'; };
-  const autoName = () => { const tp = S.tpls.find(x => x.id === tplId), pl = $('ncP').value.trim();
+  const curSite = () => !$('ncSN').hidden ? $('ncSN').value.trim() : ncSite;
+  const autoName = () => { const tp = S.tpls.find(x => x.id === tplId), cs = curSite(), pl = ((cs && cs !== siteNames()[0] ? cs + ' ' : '') + $('ncP').value.trim()).trim();
     if (src) { $('ncN').value = (src.place ? src.title.split(src.place).join(pl) : src.title); } else if (tp && !$('ncN').dataset.typed) $('ncN').value = tp.title.split(PLACE_TOKEN).join(pl).trim(); };
   if ($('ncT')) $('ncT').querySelectorAll('[data-tp]').forEach(b => b.onclick = () => { tplId = b.dataset.tp; $('ncT').querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === b)); autoName(); prev(); });
   $('ncP').oninput = () => { autoName(); prev(); };
-  let ncSite = (S.conf.lastSite && siteNames().includes(S.conf.lastSite)) ? S.conf.lastSite : siteNames()[0];
-  $('ncS').querySelectorAll('[data-ns]').forEach(b => b.onclick = () => { ncSite = b.dataset.ns; $('ncS').querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === b)); });
+  // 地方：已有的站／社區，或「＋ 其他地方」打新的名字（建立時會存起來，下次直接點）
+  let ncSite = src && src.site && siteNames().includes(src.site) ? src.site : (S.conf.lastSite && siteNames().includes(S.conf.lastSite)) ? S.conf.lastSite : siteNames()[0];
+  const showSite = () => {
+    $('ncS').querySelectorAll('[data-ns]').forEach(x => x.classList.toggle('on', !$('ncSN').hidden ? false : x.dataset.ns === ncSite));
+    $('ncSO').classList.toggle('on', !$('ncSN').hidden);
+    const blds = $('ncSN').hidden ? (siteOf(ncSite).blds || []) : [];
+    $('ncB').innerHTML = blds.map(b => `<button class="chip" data-nb="${esc(b)}">${esc(b)}</button>`).join('');
+    $('ncB').querySelectorAll('[data-nb]').forEach(b => b.onclick = () => { const v = $('ncP').value.trim(); $('ncP').value = b.dataset.nb + v.replace(new RegExp('^(' + blds.map(x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')'), ''); $('ncP').focus(); autoName(); prev(); });
+    $('ncPL').textContent = blds.length ? '哪一棟、幾樓（點上面的棟號，再打樓層）' : '地址或戶號（可不填）';
+    $('ncP').placeholder = blds.length ? `例：${blds[0]}6樓之1` : '例：A棟5樓、中正路100號';
+  };
+  $('ncS').querySelectorAll('[data-ns]').forEach(b => b.onclick = () => { ncSite = b.dataset.ns; $('ncSN').hidden = true; showSite(); autoName(); });
+  $('ncSO').onclick = () => { $('ncSN').hidden = false; showSite(); autoName(); $('ncSN').focus(); };
+  $('ncSN').oninput = autoName;
+  showSite();
   $('ncN').oninput = () => { $('ncN').dataset.typed = 1; };
   prev();
   $('ncOk').onclick = () => {
-    const pl = $('ncP').value.trim(), it = $('ncI').value.trim(), name = $('ncN').value.trim() || ((pl ? pl + ' ' : '') + (it || (pl ? '案子' : '')));
-    if (!name) return toast('請寫案子名稱或地點');
+    const other = !$('ncSN').hidden, newSite = $('ncSN').value.trim();
+    if (other && !newSite) return toast('請寫地方的名稱，或點上面已有的地方');
+    const site = other ? newSite : ncSite;
+    const pl = $('ncP').value.trim(), it = $('ncI').value.trim(), name = $('ncN').value.trim() || ((pl ? pl + ' ' : site !== siteNames()[0] ? site + ' ' : '') + (it || '案子'));
+    if (!pl && !it && !$('ncN').value.trim() && !other && !stepsFrom().length) return toast('請寫案子名稱或地點');
+    if (other && !siteNames().includes(site)) S.conf.sites.push({ name: site, blds: [] });
+    S.conf.lastSite = site;
     const L = stepsFrom().map(tplLabel).filter(Boolean);
-    const c = { id: uid(), title: name, place: pl, created: today(), plan: L.slice(1) }; S.cases.unshift(c);
+    const c = { id: uid(), title: name, site, place: pl, created: today(), plan: L.slice(1) }; S.cases.unshift(c);
     // 只建第一步；範本其他的步驟變成「建議的下一步」，做完一步時再排
-    if (L.length) { const b = { site: ncSite, place: pl, who: '', items: it, mates: '' };
+    if (L.length) { const b = { site, place: pl, who: '', items: it, mates: '' };
       S.entries.unshift({ id: uid(), cid: c.id, ord: 1, d: today(), tm: '', text: stepText(b, L[0]), ok: false, cal: false, mail: false, people: [], f: { place: pl, who: '', items: it, acts: L[0], mates: '' } }); }
     else if (it) c.item = it;
     save(); closeSheet(); renderList(); openCase(c.id); toast('案子建好了');
