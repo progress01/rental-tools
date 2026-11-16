@@ -851,7 +851,8 @@ function nextSheet(c, prev, justDone) {
   const b = baseOf(prev), plan = Array.isArray(c.plan) ? c.plan : [];
   const usedActs = sorted('acts').filter(v => S.use['acts|' + v]);
   const planOpts = plan.flatMap(x => String(x).split('｜')), first = plan.length ? String(plan[0]).split('｜') : [];
-  const opts = [...new Set([...planOpts, ...usedActs, ...NEXT_ACTS, ...sorted('acts')])].filter(Boolean).slice(0, Math.max(12, planOpts.length + 6));
+  const again = prev.f && prev.f.acts ? [prev.f.acts] : []; // 上一步做的事（例如德哥修繕要修好幾次）也列出來
+  const opts = [...new Set([...planOpts, ...again, ...usedActs, ...NEXT_ACTS, ...sorted('acts')])].filter(Boolean).slice(0, Math.max(12, planOpts.length + 6));
   let act = first.length === 1 ? first[0] : '', day = today();
   const off = n => { const x = new Date(); x.setDate(x.getDate() + n); return iso(x); };
   openSheet(`${justDone ? `<div class="donebar">✓ 這一步做完了（${md(today())}）</div><div class="hint" style="word-break:break-all">${esc(full(prev))}</div>` : `<div class="hint">接在這一步後面：${esc(shortOf(prev))}</div>`}
