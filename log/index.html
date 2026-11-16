@@ -139,7 +139,7 @@ details.tools summary{margin:4px 0;color:var(--ink);font-size:15px}
 </style>
 </head>
 <body>
-<header><h1>📝 工作日誌</h1><span class="hint" title="版本">v22・11/16</span><span style="flex:1"></span><button class="sm" id="bSet">⚙ 設定</button></header>
+<header><h1>📝 工作日誌</h1><span class="hint" title="版本">v23・11/16</span><span style="flex:1"></span><button class="sm" id="bSet">⚙ 設定</button></header>
 <div class="wrap">
   <div id="dash"></div>
   <div id="pending"></div>
@@ -730,8 +730,9 @@ const caseOf = id => id ? S.cases.find(c => c.id === id) : null;
 // 同一天的步驟照原本的順序（ord）排
 const stepsOf = c => S.entries.filter(e => e.cid === c.id).sort((a, b) => a.d.localeCompare(b.d) || (a.ord || 0) - (b.ord || 0) || (a.tm || '').localeCompare(b.tm || ''));
 const nextOrd = cid => Math.max(0, ...S.entries.filter(e => e.cid === cid).map(e => e.ord || 0)) + 1;
-const prog = c => { const s = stepsOf(c); return { n: s.length + (Array.isArray(c.plan) ? c.plan.length : 0), done: s.filter(e => e.ok).length }; };
-const caseDone = c => { const p = prog(c); return p.n > 0 && p.done === p.n; };
+// 進度只算真的建好的步驟；範本還沒排的步驟另外列，不算進去
+const prog = c => { const s = stepsOf(c); return { n: s.length, done: s.filter(e => e.ok).length }; };
+const caseDone = c => { const p = prog(c); return p.n > 0 && p.done === p.n && !(Array.isArray(c.plan) && c.plan.length); };
 const nextStep = c => stepsOf(c).find(e => !e.ok);
 // 範本：步驟裡的地點寫成 {地點}，開新案子時換成新的地點
 function defaultTpls() {
