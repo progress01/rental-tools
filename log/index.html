@@ -139,7 +139,7 @@ details.tools summary{margin:4px 0;color:var(--ink);font-size:15px}
 </style>
 </head>
 <body>
-<header><h1>📝 工作日誌</h1><span class="hint" title="版本">v21・11/16</span><span style="flex:1"></span><button class="sm" id="bSet">⚙ 設定</button></header>
+<header><h1>📝 工作日誌</h1><span class="hint" title="版本">v22・11/16</span><span style="flex:1"></span><button class="sm" id="bSet">⚙ 設定</button></header>
 <div class="wrap">
   <div id="dash"></div>
   <div id="pending"></div>
@@ -742,6 +742,14 @@ function defaultTpls() {
   ];
 }
 if (!Array.isArray(S.tpls)) S.tpls = defaultTpls();
+// 修繕流程（照流程圖）：來源 → 問品項、約內約外 → 聯絡住戶（現勘或請提供照片）→ 照片遠中近 → 簡單的德哥修／複雜的找廠商 → 完成、公司登記
+// 「A｜B」是分岔：到那一步兩個都會列出來，選一個
+if (!S.tpls.some(t => t.name === '修繕流程')) {
+  const P = S.conf.prefix, me = S.conf.me;
+  S.tpls.unshift({ id: uid(), name: '修繕流程', title: '{地點} 修繕', steps: ['詢問修繕品項、約內約外', '聯絡住戶（現勘或請提供照片）', '取得照片（遠、中、近）', '德哥修繕｜聯絡廠商（看品項）', '修繕完成、公司登記（修繕前後照片）'].map(x => `${P}{地點}，${x}_${me}`) });
+  save();
+}
+const planTxt = x => String(x).split('｜').join(' 或 ');
 // 試用版：第一次打開放幾筆假的示範資料
 if (BETA && !S.entries.length && !S.cases.length) {
   const dd = n => { const x = new Date(); x.setDate(x.getDate() + n); return iso(x); }, P = S.conf.prefix;
@@ -781,7 +789,7 @@ function openCase(id) {
     <div class="body">
       <input id="cvT" value="${esc(c.title)}" style="font-size:20px;font-weight:900" placeholder="案子名稱，例：161號6樓之1 退租點交">
       <div class="pbar"><i style="width:${p.n ? Math.round(p.done / p.n * 100) : 0}%"></i></div>
-      <div class="hint">${caseDone(c) ? '✓ 這件案子全部做完了' : '每一步做完就打勾，打勾後會問「下一步要做什麼」，地點、東西、聯絡人都沿用。'}${(c.plan || []).length ? `<br>⭐ 範本接下來還有：${c.plan.map(esc).join(' → ')}` : ''}</div>
+      <div class="hint">${caseDone(c) ? '✓ 這件案子全部做完了' : '每一步做完就打勾，打勾後會問「下一步要做什麼」，地點、東西、聯絡人都沿用。'}${(c.plan || []).length ? `<br>⭐ 範本接下來還有：${c.plan.map(x => esc(planTxt(x))).join(' → ')}` : ''}</div>
       ${st.map(e => `<div class="stp ${e.ok ? 'done' : ''}"><button class="ck" data-sok="${e.id}">${e.ok ? '✓' : ''}</button>
         <div style="min-width:0;display:flex;flex-direction:column;gap:4px">
           <div class="row"><span class="hint">預計</span><input type="date" data-sd="${e.id}" value="${e.d}" style="width:auto;padding:4px 8px;font-size:15px"><span class="hint">${wd(e.d) ? '（' + wd(e.d) + '）' : ''}${e.cal ? '　📅已上日曆' : ''}</span></div>
@@ -842,13 +850,14 @@ function tick(e) {
 function nextSheet(c, prev, justDone) {
   const b = baseOf(prev), plan = Array.isArray(c.plan) ? c.plan : [];
   const usedActs = sorted('acts').filter(v => S.use['acts|' + v]);
-  const opts = [...new Set([...plan, ...usedActs, ...NEXT_ACTS, ...sorted('acts')])].filter(Boolean).slice(0, 12);
-  let act = plan[0] || '', day = today();
+  const planOpts = plan.flatMap(x => String(x).split('｜')), first = plan.length ? String(plan[0]).split('｜') : [];
+  const opts = [...new Set([...planOpts, ...usedActs, ...NEXT_ACTS, ...sorted('acts')])].filter(Boolean).slice(0, Math.max(12, planOpts.length + 6));
+  let act = first.length === 1 ? first[0] : '', day = today();
   const off = n => { const x = new Date(); x.setDate(x.getDate() + n); return iso(x); };
   openSheet(`${justDone ? `<div class="donebar">✓ 這一步做完了（${md(today())}）</div><div class="hint" style="word-break:break-all">${esc(full(prev))}</div>` : `<div class="hint">接在這一步後面：${esc(shortOf(prev))}</div>`}
     <h3 style="margin:4px 0 0">下一步要做什麼？</h3>
-    ${plan.length ? '<div class="hint">⭐ 是範本排的下一步，已經幫你選好</div>' : ''}
-    <div class="chips" id="nxA">${opts.map((v, i) => `<button class="chip ${i < plan.length ? 'tp' : ''} ${v === act ? 'on' : ''}" data-na="${esc(v)}">${i < plan.length ? '⭐ ' : ''}${esc(v)}</button>`).join('')}<button class="chip add" id="nxO">＋ 其他</button></div>
+    ${first.length > 1 ? `<div class="hint" style="font-size:15px">⭐ 範本到這裡分兩條路，選一個：<b>${first.map(esc).join('</b> 或 <b>')}</b></div>` : plan.length ? '<div class="hint">⭐ 是範本排的下一步，已經幫你選好</div>' : ''}
+    <div class="chips" id="nxA">${opts.map((v, i) => `<button class="chip ${i < planOpts.length ? 'tp' : ''} ${v === act ? 'on' : ''}" data-na="${esc(v)}">${i < planOpts.length ? '⭐ ' : ''}${esc(v)}</button>`).join('')}<button class="chip add" id="nxO">＋ 其他</button></div>
     <input id="nxT" placeholder="自己打，例：約師傅、再約一次" hidden>
     <div class="lbl">哪一天</div>
     <div class="chips" id="nxD"><button class="chip on" data-nd="0">今天</button><button class="chip" data-nd="1">明天</button><button class="chip" data-nd="2">後天</button><input type="date" id="nxDate" style="width:auto"></div>
@@ -873,7 +882,7 @@ function nextSheet(c, prev, justDone) {
   $('nxOk').onclick = () => {
     if (!act) return toast('先點下一步要做什麼');
     const e = { id: uid(), cid: c.id, ord: nextOrd(c.id), d: day, tm: '', text: stepText(b, act), ok: false, cal: false, mail: false, people: (prev.people || []).map(x => ({ ...x })), f: { place: b.place, who: b.who, items: b.items, acts: act, mates: b.mates } };
-    const pi = plan.indexOf(act); if (pi >= 0) plan.splice(pi, 1);
+    const pi = plan.findIndex(x => String(x).split('｜').includes(act)); if (pi >= 0) plan.splice(pi, 1);
     if (S.conf.acts.includes(act)) used('acts', act);
     S.entries.unshift(e); save(); closeSheet(); renderList();
     toast(`排好了：${md(day)}（${wd(day)}）${act}`);
@@ -905,7 +914,7 @@ function newCaseSheet(opt = {}) {
     <div class="row" style="justify-content:flex-end"><button onclick="closeSheet()">取消</button><button class="pri" id="ncOk">建立</button></div>`);
   const prev = () => { const pl = $('ncP').value.trim(), s = stepsFrom();
     const L = s.map(tplLabel).filter(Boolean);
-    $('ncPrev').innerHTML = L.length ? `先建第 1 步「<b>${esc(L[0])}</b>」，排今天。<br>${L.length > 1 ? `之後每做完一步，會提示下一步（${L.slice(1).map(esc).join(' → ')}），日期到時候再選。` : ''}` : '空白的案子，建立後再一步一步加。'; };
+    $('ncPrev').innerHTML = L.length ? `先建第 1 步「<b>${esc(L[0])}</b>」，排今天。<br>${L.length > 1 ? `之後每做完一步，會提示下一步（${L.slice(1).map(x => esc(planTxt(x))).join(' → ')}），日期到時候再選。` : ''}` : '空白的案子，建立後再一步一步加。'; };
   const curSite = () => !$('ncSN').hidden ? $('ncSN').value.trim() : ncSite;
   const autoName = () => { const tp = S.tpls.find(x => x.id === tplId), cs = curSite(), pl = ((cs && cs !== siteNames()[0] ? cs + ' ' : '') + $('ncP').value.trim()).trim();
     if (src) { $('ncN').value = (src.place ? src.title.split(src.place).join(pl) : src.title); } else if (tp && !$('ncN').dataset.typed) $('ncN').value = tp.title.split(PLACE_TOKEN).join(pl).trim(); };
